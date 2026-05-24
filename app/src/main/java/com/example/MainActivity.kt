@@ -923,10 +923,11 @@ fun JarvisHudView(
         // 3. API Key Management Panel
         item {
             val sharedPrefs = context.getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE)
-            if (sharedPrefs.getString("custom_api_key", "").isNullOrBlank()) {
-                sharedPrefs.edit().putString("custom_api_key", "AIzaSyCcYLVvFC76ZRnMlwDN9cjGOWJrCE6bO5o").apply()
+            val currentSavedKey = sharedPrefs.getString("custom_api_key", "") ?: ""
+            if (currentSavedKey.isBlank() || currentSavedKey == "AIzaSyCcYLVvFC76ZRnMlwDN9cjGOWJrCE6bO5o") {
+                sharedPrefs.edit().putString("custom_api_key", "AIzaSyA2j_H4g2JwzKgN9tbXMQH3Apl6Cks0nks").apply()
             }
-            var keyInput by remember { mutableStateOf(sharedPrefs.getString("custom_api_key", "AIzaSyCcYLVvFC76ZRnMlwDN9cjGOWJrCE6bO5o") ?: "AIzaSyCcYLVvFC76ZRnMlwDN9cjGOWJrCE6bO5o") }
+            var keyInput by remember { mutableStateOf(sharedPrefs.getString("custom_api_key", "AIzaSyA2j_H4g2JwzKgN9tbXMQH3Apl6Cks0nks") ?: "AIzaSyA2j_H4g2JwzKgN9tbXMQH3Apl6Cks0nks") }
             var testResult by remember { mutableStateOf("") }
             var isTesting by remember { mutableStateOf(false) }
             val coroutineScope = rememberCoroutineScope()
