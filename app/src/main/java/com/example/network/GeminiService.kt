@@ -184,10 +184,7 @@ object JarvisBrain {
         )
 
         val modelsToTry = listOf(
-            "gemini-1.5-flash",
-            "gemini-1.5-pro",
             "gemini-2.5-flash",
-            "gemini-2.0-flash",
             "gemini-3.5-flash"
         )
         
@@ -203,6 +200,17 @@ object JarvisBrain {
                         return parsed
                     }
                 }
+            } catch (e: retrofit2.HttpException) {
+                val errorBodyString = e.response()?.errorBody()?.string()
+                val detailedMessage = try {
+                    val errorObj = RetrofitClient.jsonParser.adapter(Map::class.java).fromJson(errorBodyString ?: "") as? Map<*, *>
+                    val errorDetails = errorObj?.get("error") as? Map<*, *>
+                    errorDetails?.get("message")?.toString()
+                } catch (pe: Exception) {
+                    null
+                }
+                val finalMsg = detailedMessage ?: errorBodyString ?: e.message()
+                lastException = Exception("HTTP ${e.code()}: $finalMsg", e)
             } catch (e: Exception) {
                 lastException = e
             }
