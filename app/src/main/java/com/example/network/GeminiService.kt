@@ -75,11 +75,15 @@ data class GenerateContentResponse(
 @JsonClass(generateAdapter = true)
 data class JarvisIntentResponse(
     @Json(name = "explanation") val explanation: String,
-    @Json(name = "intent") val intent: String, // "OPEN_YOUTUBE", "SEARCH_GOOGLE", "AUTO_LOGIN", "TYPE_TEXT", "CLICK_COORDINATES", "SPEAK_ONLY"
+    @Json(name = "intent") val intent: String, // "OPEN_YOUTUBE", "SEARCH_GOOGLE", "AUTO_LOGIN", "TYPE_TEXT", "CLICK_COORDINATES", "SHARE_CONTENT", "CROSS_APP_TRANSFER", "DEVICE_CONTROL", "SPEAK_ONLY"
     @Json(name = "searchQuery") val searchQuery: String? = "",
     @Json(name = "inputText") val inputText: String? = "",
     @Json(name = "clickTarget") val clickTarget: String? = "",
-    @Json(name = "targetUrl") val targetUrl: String? = ""
+    @Json(name = "targetUrl") val targetUrl: String? = "",
+    @Json(name = "sharePlatform") val sharePlatform: String? = "",
+    @Json(name = "shareRecipient") val shareRecipient: String? = "",
+    @Json(name = "targetContext") val targetContext: String? = "",
+    @Json(name = "controlAction") val controlAction: String? = ""
 )
 
 interface GeminiApiService {
@@ -131,16 +135,26 @@ object JarvisBrain {
            Provide 'inputText' with characters/strings.
         5. "CLICK_COORDINATES": Clicking somewhere on the screen (e.g., "giriş yap butonuna tıkla", "şuraya tıkla", "arama simgesine tıkla").
            Provide 'clickTarget' describing what to click.
-        6. "SPEAK_ONLY": General conversation or command Jarvis can respond to via text/voice only.
-        
+        6. "SHARE_CONTENT": Sharing specified content, links, or videos via an external app (e.g., "Bu videoyu WhatsApp'tan Ahmet'e gönder", "Tarkan klibini Telegram ile paylaş sör", "şunu e-posta ile gönder").
+           Provide 'sharePlatform' (e.g., "WhatsApp", "Telegram", "E-posta"), 'shareRecipient' if mentioned (e.g., "Ahmet", "Mehmet"), and 'inputText' with the text/data/video link to share.
+        7. "CROSS_APP_TRANSFER": Copying content from one app context (e.g. browser, clipboard, site) and transferring/pasting it to another app (e.g., "web sitesindeki bilgileri kopyalayıp notlar uygulamasına yapıştır", "yazıyı alıp not defterine ekle").
+           Provide 'inputText' with the actual text to be copied / simulated to copy, and 'targetContext' (e.g., "Notlar", "Panoya", "E-posta") with the destination application.
+        8. "DEVICE_CONTROL": Controlling the device's hardware, system settings, or permissions (e.g., "feneri aç", "flashı kapat", "wifiyi kapat", "wifiyi aç sör", "sesi aç", "sesi kıs", "titreşim yap", "telefonun tüm kontrol yetkilerini ver sör").
+           Provide 'controlAction' containing one of: "FLASHLIGHT_ON", "FLASHLIGHT_OFF", "WIFI_ON", "WIFI_OFF", "BLUETOOTH_ON", "BLUETOOTH_OFF", "VOLUME_UP", "VOLUME_DOWN", "VIBRATE", "ALL_PERMISSIONS".
+        9. "SPEAK_ONLY": General conversation or command Jarvis can respond to via text/voice only.
+          
         You MUST respond strictly in valid JSON format matching this schema:
         {
-          "explanation": "Jarvis's spoken response in Turkish. Make it sound rich like a butler. Example: 'Tabii sör, YouTube araması başlatılıyor.'",
-          "intent": "OPEN_YOUTUBE | SEARCH_GOOGLE | AUTO_LOGIN | TYPE_TEXT | CLICK_COORDINATES | SPEAK_ONLY",
+          "explanation": "Jarvis's spoken response in Turkish. Make it sound rich like a butler. Example: 'Tabii sör, sistem feneri derhal etkinleştiriliyor.'",
+          "intent": "OPEN_YOUTUBE | SEARCH_GOOGLE | AUTO_LOGIN | TYPE_TEXT | CLICK_COORDINATES | SHARE_CONTENT | CROSS_APP_TRANSFER | DEVICE_CONTROL | SPEAK_ONLY",
           "searchQuery": "value or empty",
           "inputText": "value or empty",
           "clickTarget": "value or empty",
-          "targetUrl": "value or empty"
+          "targetUrl": "value or empty",
+          "sharePlatform": "value or empty (e.g. WhatsApp)",
+          "shareRecipient": "value or empty (e.g. Ahmet)",
+          "targetContext": "value or empty (e.g. Notlar)",
+          "controlAction": "value or empty (one of FLASHLIGHT_ON, FLASHLIGHT_OFF, WIFI_ON, WIFI_OFF, BLUETOOTH_ON, BLUETOOTH_OFF, VOLUME_UP, VOLUME_DOWN, VIBRATE, ALL_PERMISSIONS)"
         }
         Do not add any markup or markdown wraps like ```json in the actual voice response. We will request JSON MimeType so return pure JSON text only.
     """

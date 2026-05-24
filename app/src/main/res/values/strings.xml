@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Jarvis AI</string>
+    <string name="accessibility_desc">Jarvis sesli asistanı için ekran tıklama ve cihaz kontrol yetkileri sağlar, sör.</string>
 </resources>

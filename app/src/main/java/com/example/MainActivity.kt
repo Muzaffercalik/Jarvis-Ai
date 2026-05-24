@@ -2,6 +2,7 @@ package com.example
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -192,7 +193,8 @@ fun JarvisMainScreen(
                                     permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                 }
                             },
-                            viewModel = viewModel
+                            viewModel = viewModel,
+                            speechManager = speechManager
                         )
                     }
                     JarvisTab.CREDENTIALS -> {
@@ -344,13 +346,13 @@ fun JarvisCoreVisualizer(
                         Color.Transparent
                     ),
                     center = center,
-                    radius = baseRadius * pulseScale
+                    radius = (baseRadius * pulseScale).coerceAtLeast(0.1f)
                 )
             )
 
             drawCircle(
                 color = NeonCyan.copy(alpha = 0.8f),
-                radius = baseRadius * pulseScale,
+                radius = (baseRadius * pulseScale).coerceAtLeast(0f),
                 style = Stroke(
                     width = 2.dp.toPx(),
                     pathEffect = PathEffect.dashPathEffect(
@@ -362,7 +364,7 @@ fun JarvisCoreVisualizer(
 
             drawCircle(
                 color = NeonBlue.copy(alpha = 0.5f),
-                radius = (baseRadius - 16.dp.toPx()) * (1f / pulseScale),
+                radius = ((baseRadius - 16.dp.toPx()) * (1f / pulseScale)).coerceAtLeast(0f),
                 style = Stroke(
                     width = 1.5.dp.toPx(),
                     pathEffect = PathEffect.dashPathEffect(
@@ -517,14 +519,15 @@ fun JarvisHudView(
     onTypedInputChange: (String) -> Unit,
     onSendTypedCommand: () -> Unit,
     onMicClicked: () -> Unit,
-    viewModel: JarvisViewModel
+    viewModel: JarvisViewModel,
+    speechManager: JarvisSpeechManager?
 ) {
     val shortcuts by viewModel.shortcuts.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val keyboardOptions = KeyboardActionsWithFloatingBubbles(
         shortcuts = shortcuts,
         onShortcutClick = { phrase ->
-            viewModel.executeCommand(phrase, context) { speechManager -> }
+            viewModel.executeCommand(phrase, context) { speechManager?.speak(it) }
         }
     )
 
@@ -730,8 +733,163 @@ fun JarvisHudView(
                 keyboardOptions
             }
         }
+
+        // Background Orb & Accessibility Permissions Control Center
+        item {
+            var isOrbActive by remember { mutableStateOf(false) }
+            val isAccessibilityActive = JarvisAccessibilityService.isServiceRunning()
+            
+            // Check if service is already running on view load/interval
+            LaunchedEffect(Unit) {
+                val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+                if (manager != null) {
+                    @Suppress("DEPRECATION")
+                    for (service in manager.getRunningServices(Int.MAX_VALUE)) {
+                        if (JarvisFloatingService::class.java.name == service.service.className) {
+                            isOrbActive = true
+                            break
+                        }
+                    }
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, TechViolet.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                    .background(TechPanel.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "ARKA PLAN ASİSTANI VE ERİŞİLEBİLİRLİK YÖNETİMİ",
+                    color = TechViolet,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold
+                )
+
+                HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+
+                // 1. Draggable Floating Orb Service
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Sürüklenebilir Jarvis Küresi (Floating Orb)",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Arka planda dilediğiniz ekranda asistanı çağırın",
+                            color = SoftGrey,
+                            fontSize = 10.sp
+                        )
+                    }
+                    Switch(
+                        checked = isOrbActive,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = NeonCyan,
+                            checkedTrackColor = NeonBlue.copy(alpha = 0.5f)
+                        ),
+                        onCheckedChange = { checked ->
+                            if (checked) {
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M && !android.provider.Settings.canDrawOverlays(context)) {
+                                    Toast.makeText(context, "Sistem üstünde çizim yetkisini onaylamalısınız sör.", Toast.LENGTH_LONG).show()
+                                    val intent = Intent(
+                                        android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                        android.net.Uri.parse("package:${context.packageName}")
+                                    )
+                                    context.startActivity(intent)
+                                } else {
+                                    val serviceIntent = Intent(context, JarvisFloatingService::class.java)
+                                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                        context.startForegroundService(serviceIntent)
+                                    } else {
+                                        context.startService(serviceIntent)
+                                    }
+                                    isOrbActive = true
+                                    Toast.makeText(context, "Jarvis Asistan Küresi aktif edildi sör.", Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                val serviceIntent = Intent(context, JarvisFloatingService::class.java)
+                                context.stopService(serviceIntent)
+                                isOrbActive = false
+                                Toast.makeText(context, "Jarvis Asistan Küresi kapatıldı.", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    )
+                }
+
+                // 2. Intelligent Screen Clicking (Accessibility)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Akıllı Ekran Tıklayıcı (Erişilebilirlik)",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(if (isAccessibilityActive) SuccessGreen.copy(alpha = 0.15f) else ErrorRed.copy(alpha = 0.15f))
+                                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = if (isAccessibilityActive) "AKTİF" else "KAPALI",
+                                    color = if (isAccessibilityActive) SuccessGreen else ErrorRed,
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                        Text(
+                            text = "Ekrandaki butonları Jarvis'in tıklamasını sağlar",
+                            color = SoftGrey,
+                            fontSize = 10.sp
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                            context.startActivity(intent)
+                            Toast.makeText(context, "Jarvis Akıllı Erişim Asistanı'nı etkinleştirin sör.", Toast.LENGTH_LONG).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = if (isAccessibilityActive) Color.DarkGray else TechViolet),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Text(
+                            text = if (isAccessibilityActive) "Ayarlar" else "Aktif Et",
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
     }
 }
+
+private data class SuggestionItem(
+    val command: String,
+    val label: String,
+    val color: Color,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector
+)
 
 @Composable
 fun KeyboardActionsWithFloatingBubbles(
@@ -739,10 +897,42 @@ fun KeyboardActionsWithFloatingBubbles(
     onShortcutClick: (String) -> Unit
 ) {
     val items = listOf(
-        Triple("Youtube'da Tarkan Çalın", Color(0xFFEF4444), Icons.Default.PlayArrow),
-        Triple("Google'da Yapay Zeka Ara", Color(0xFF3B82F6), Icons.Default.Search),
-        Triple("Hesap Kasasından Giriş Yap", Color(0xFF10B981), Icons.Default.Lock),
-        Triple("Kısayolları Düzenle", Color(0xFF8B5CF6), Icons.Default.Settings)
+        SuggestionItem(
+            command = "bu videoyu whatsapp'tan ahmet'e gönder",
+            label = "WhatsApp'tan Ahmet'e Gönder",
+            color = Color(0xFF10B981),
+            icon = Icons.Default.Share
+        ),
+        SuggestionItem(
+            command = "web sitesindeki bilgileri kopyalayıp notlar uygulamasına yapıştır",
+            label = "Bilgiyi Notlara Aktar",
+            color = Color(0xFFF59E0B),
+            icon = Icons.Default.Edit
+        ),
+        SuggestionItem(
+            command = "feneri aç sör",
+            label = "Telefon Fenerini Aç sör",
+            color = Color(0xFFFFD700),
+            icon = Icons.Default.Warning
+        ),
+        SuggestionItem(
+            command = "wifiyi kapat sör",
+            label = "WiFi/Kablosuz Kapat sör",
+            color = Color(0xFF8B5CF6),
+            icon = Icons.Default.Refresh
+        ),
+        SuggestionItem(
+            command = "youtube'da tarkan çalın",
+            label = "Youtube'da Tarkan Çalın",
+            color = Color(0xFFEF4444),
+            icon = Icons.Default.PlayArrow
+        ),
+        SuggestionItem(
+            command = "google'da yapay zeka ara",
+            label = "Google'da Haber Ara",
+            color = Color(0xFF3B82F6),
+            icon = Icons.Default.Search
+        )
     )
 
     Column(
@@ -754,14 +944,14 @@ fun KeyboardActionsWithFloatingBubbles(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                rowItems.forEach { (label, tintColor, icon) ->
+                rowItems.forEach { item ->
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(16.dp))
                             .background(Color(0xFF141619))
                             .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(16.dp))
-                            .clickable { onShortcutClick(label) }
+                            .clickable { onShortcutClick(item.command) }
                             .padding(12.dp)
                     ) {
                         Column(
@@ -772,18 +962,18 @@ fun KeyboardActionsWithFloatingBubbles(
                                 modifier = Modifier
                                     .size(32.dp)
                                     .clip(RoundedCornerShape(8.dp))
-                                    .background(tintColor.copy(alpha = 0.15f)),
+                                    .background(item.color.copy(alpha = 0.15f)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
-                                    imageVector = icon,
-                                    contentDescription = label,
-                                    tint = tintColor,
+                                    imageVector = item.icon,
+                                    contentDescription = item.label,
+                                    tint = item.color,
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
                             Text(
-                                text = label,
+                                text = item.label,
                                 color = Color.White.copy(alpha = 0.9f),
                                 fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace,

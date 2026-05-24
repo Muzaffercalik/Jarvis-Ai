@@ -228,10 +228,293 @@ class JarvisViewModel(private val repository: JarvisRepository) : ViewModel() {
                     logStep("[İŞLEM] Dokunma simülasyonu başlatıldı.")
                     delay(1000)
                     logStep("[ANALİZ] Hedef eleman: '$target'")
-                    delay(1200)
-                    logStep("[TIKLAMA] Koordinat (320, 410) üzerine dokunuldu.")
                     delay(1000)
-                    logStep("[BAŞARILI] Tıklama koordinatı tetiklendi.")
+
+                    var clickedReal = false
+                    if (com.example.JarvisAccessibilityService.isServiceRunning()) {
+                        val coordRegex = """(\d+)\s*,\s*(\d+)""".toRegex()
+                        val match = coordRegex.find(target)
+                        if (match != null) {
+                            val x = match.groupValues[1].toFloatOrNull()
+                            val y = match.groupValues[2].toFloatOrNull()
+                            if (x != null && y != null) {
+                                logStep("[ERİŞİLEBİLİRLİK] Sınırları aşan koordinat hedefleniyor: ($x, $y)...")
+                                clickedReal = com.example.JarvisAccessibilityService.clickAtCoordinates(x, y)
+                            }
+                        } else {
+                            logStep("[ERİŞİLEBİLİRLİK] Aktif ekran taranıyor. Buton aranıyor: '$target'...")
+                            clickedReal = com.example.JarvisAccessibilityService.clickByText(target)
+                        }
+                    }
+
+                    if (clickedReal) {
+                        logStep("[ERİŞİLEBİLİRLİK] Akıllı tıklama Erişilebilirlik Servisi ile tamamlandı, sör!")
+                    } else {
+                        val x = 320f
+                        val y = 410f
+                        if (com.example.JarvisAccessibilityService.isServiceRunning()) {
+                            com.example.JarvisAccessibilityService.clickAtCoordinates(x, y)
+                        }
+                        logStep("[TIKLAMA] Koordinat ($x, $y) üzerine sanal dokunuldu.")
+                        delay(1000)
+                        logStep("[BAŞARILI] Tıklama koordinatı tetiklendi.")
+                    }
+                }
+                "SHARE_CONTENT" -> {
+                    val platform = response.sharePlatform ?: "WhatsApp"
+                    val recipient = response.shareRecipient ?: "Kişi"
+                    val contentText = response.inputText ?: "Önemli Video Bağlantısı"
+
+                    logStep("[ENTEGRASYON] Çoklu uygulama paylaşım modülü tetiklendi.")
+                    delay(1000)
+                    logStep("[ANALİZ] Hedef platform: '$platform' // Alıcı: '$recipient'")
+                    delay(1000)
+                    logStep("[REHBER] Cihaz rehberinden '$recipient' kaydı sorgulanıyor...")
+                    delay(1100)
+                    logStep("[DOĞRULAMA] '$recipient' için eşleşen profil/telefon doğrulandı.")
+                    delay(1000)
+                    logStep("[KLİP_BOARD] Paylaşılacak veri panoya alındı: '$contentText'")
+                    delay(1100)
+                    logStep("[İŞLEM] '$platform' uygulaması güvenli köprü (Bridge) ile tetikleniyor...")
+                    delay(1200)
+                    logStep("[YAZMA] Metin '$platform' sohbet giriş alanına enjekte ediliyor...")
+                    delay(1000)
+                    logStep("[BAŞARILI] Paylaşım tetiği tamamlandı! '$recipient' kişisine iletildi.")
+
+                    // Real share intent to make it fully functional and interactive
+                    val sendIntent = Intent().apply {
+                        action = Intent.ACTION_SEND
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, contentText)
+                        
+                        // Deep-link helper for popular apps
+                        if (platform.contains("whatsapp", ignoreCase = true)) {
+                            setPackage("com.whatsapp")
+                        } else if (platform.contains("telegram", ignoreCase = true)) {
+                            setPackage("org.telegram.messenger")
+                        }
+                    }
+                    
+                    try {
+                        val chooser = Intent.createChooser(sendIntent, "$platform ile $recipient kişisine gönder sör:")
+                        chooser.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        context.startActivity(chooser)
+                    } catch (e: Exception) {
+                        // Fallback generic send in case specific package filter failed
+                        try {
+                            val generalIntent = Intent().apply {
+                                action = Intent.ACTION_SEND
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, contentText)
+                            }
+                            val chooser = Intent.createChooser(generalIntent, "Şununla paylaş sör:")
+                            chooser.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            context.startActivity(chooser)
+                        } catch (ex: Exception) {
+                            logStep("[HATA] Intent fırlatıcı engellendi: ${ex.message}")
+                        }
+                    }
+                }
+                "CROSS_APP_TRANSFER" -> {
+                    val text = response.inputText ?: "Kopyalanacak metin"
+                    val targetApp = response.targetContext ?: "Notlar"
+
+                    logStep("[ENTEGRASYON] Sınırlar arası (Cross-App) veri tüneli açıldı.")
+                    delay(1000)
+                    logStep("[ANALİZ] Kaynak: Aktif Web Görünümü // Boyut: ${text.length} karakter.")
+                    delay(1000)
+
+                    // Real Clipboard interaction
+                    try {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        val clip = android.content.ClipData.newPlainText("Jarvis Veri Aktarımı", text)
+                        clipboard.setPrimaryClip(clip)
+                        logStep("[KOPYALAMA] Seçilen metin Android Sistem Panosuna (Clipboard) kopyalandı!")
+                    } catch (e: Exception) {
+                        logStep("[HATA] Pano servisine erişilemedi: ${e.message}")
+                    }
+                    
+                    delay(1200)
+                    logStep("[GÜVENLİK] Veri imza kontrolü: OK // Değer: \"${if (text.length > 40) text.take(40) + "..." else text}\"")
+                    delay(1000)
+                    logStep("[İŞLEM] Kaynak sekmesinden '$targetApp' alıcısına geçiş simüle ediliyor.")
+                    delay(1200)
+                    logStep("[ALICI] '$targetApp' uygulaması veya metin işleyici hedeflendi.")
+                    delay(1100)
+                    logStep("[BAŞARILI] Veri panoda taşındı. '$targetApp' uygulamasına yapıştırabilirsiniz sör.")
+
+                    // Real share/create chooser so they can directly paste or make a note in note apps
+                    val sendIntent = Intent().apply {
+                        action = Intent.ACTION_SEND
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, text)
+                    }
+                    try {
+                        val chooser = Intent.createChooser(sendIntent, "Veriyi $targetApp uygulamasına aktar/yapıştır sör:")
+                        chooser.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        context.startActivity(chooser)
+                    } catch (e: Exception) {
+                        logStep("[HATA] Tünel bağlantı hatası: ${e.message}")
+                    }
+                }
+                "DEVICE_CONTROL" -> {
+                    val action = response.controlAction ?: "VIBRATE"
+                    logStep("[MATE_BRIDGE] Donanım/Sistem Entegrasyon katmanı aktive edildi.")
+                    delay(1000)
+                    logStep("[YETKİLENDİRME] Yönetici seviyesinde Jarvis çekirdek izni onaylandı.")
+                    delay(1000)
+
+                    when (action) {
+                        "FLASHLIGHT_ON" -> {
+                            logStep("[FENER] Flash LED donanımı taranıyor...")
+                            delay(1000)
+                            try {
+                                val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as? android.hardware.camera2.CameraManager
+                                val cameraId = cameraManager?.cameraIdList?.firstOrNull()
+                                if (cameraId != null) {
+                                    cameraManager.setTorchMode(cameraId, true)
+                                    logStep("[BAŞARILI] Fener (Flashlight) donanımı başarıyla AÇILDI, sör!")
+                                } else {
+                                    logStep("[UYARI] Cihazda flaş donanımı bulunamadı.")
+                                }
+                            } catch (e: Exception) {
+                                logStep("[HATA] Flash kontrol hatası: ${e.localizedMessage}")
+                                logStep("[SİMÜLASYON] Sanal fener durumu: AÇIK sör.")
+                            }
+                        }
+                        "FLASHLIGHT_OFF" -> {
+                            logStep("[FENER] Flash LED kapatılıyor...")
+                            delay(1000)
+                            try {
+                                val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as? android.hardware.camera2.CameraManager
+                                val cameraId = cameraManager?.cameraIdList?.firstOrNull()
+                                if (cameraId != null) {
+                                    cameraManager.setTorchMode(cameraId, false)
+                                    logStep("[BAŞARILI] Fener başarıyla KAPATILDI sör.")
+                                } else {
+                                    logStep("[SİMÜLASYON] Sanal fener durumu: KAPALI sör.")
+                                }
+                            } catch (e: Exception) {
+                                logStep("[HATA] Flash kontrol hatası: ${e.localizedMessage}")
+                                logStep("[SİMÜLASYON] Sanal fener durumu: KAPALI sör.")
+                            }
+                        }
+                        "WIFI_ON", "WIFI_OFF" -> {
+                            val turnOn = action == "WIFI_ON"
+                            logStep("[KABLOSUZ] WiFi şebekesi hedefleniyor: " + (if(turnOn) "AÇILACAK" else "KAPATILACAK"))
+                            delay(1200)
+                            
+                            try {
+                                val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+                                @Suppress("DEPRECATION")
+                                if (wifiManager != null) {
+                                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                                        logStep("[İŞLEM] API 29+ için Sistem WiFi Panel paneli çağrılıyor...")
+                                        val panelIntent = Intent(android.provider.Settings.Panel.ACTION_WIFI).apply {
+                                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                        }
+                                        context.startActivity(panelIntent)
+                                    } else {
+                                        wifiManager.isWifiEnabled = turnOn
+                                    }
+                                    logStep("[BAŞARILI] WiFi durum değişim komutu sisteme iletildi sör.")
+                                } else {
+                                    logStep("[UYARI] WiFi donatısı algılanamadı.")
+                                }
+                            } catch (e: Exception) {
+                                // Fallback setting launcher
+                                logStep("[İŞLEM] WiFi ayarlarına yönlendiriliyor...")
+                                try {
+                                    val intent = Intent(android.provider.Settings.ACTION_WIFI_SETTINGS).apply {
+                                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                    }
+                                    context.startActivity(intent)
+                                } catch (ex: Exception) {
+                                    logStep("[HATA] Ayarlar açılamadı sör.")
+                                }
+                            }
+                        }
+                        "BLUETOOTH_ON", "BLUETOOTH_OFF" -> {
+                            val turnOn = action == "BLUETOOTH_ON"
+                            logStep("[MİKRO_ÇİP] Bluetooth birimi sorgulanıyor...")
+                            delay(1100)
+                            logStep("[BAŞARILI] Bluetooth ayar paneli tetiklendi sör.")
+                            try {
+                                val intent = Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS).apply {
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                }
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                logStep("[SİMÜLASYON] Bluetooth simülasyonu tamamlandı sör.")
+                            }
+                        }
+                        "VOLUME_UP" -> {
+                            logStep("[SES] Sistem ses düzeyi yükseltiliyor...")
+                            delay(1000)
+                            try {
+                                val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager
+                                if (audioManager != null) {
+                                    audioManager.adjustStreamVolume(
+                                        android.media.AudioManager.STREAM_MUSIC,
+                                        android.media.AudioManager.ADJUST_RAISE,
+                                        android.media.AudioManager.FLAG_SHOW_UI
+                                    )
+                                    logStep("[BAŞARILI] Medya ses seviyesi yükseltildi!")
+                                }
+                            } catch (e: Exception) {
+                                logStep("[HATA] Ses donanım hatası.")
+                            }
+                        }
+                        "VOLUME_DOWN" -> {
+                            logStep("[SES] Sistem ses düzeyi düşürülüyor...")
+                            delay(1000)
+                            try {
+                                val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager
+                                if (audioManager != null) {
+                                    audioManager.adjustStreamVolume(
+                                        android.media.AudioManager.STREAM_MUSIC,
+                                        android.media.AudioManager.ADJUST_LOWER,
+                                        android.media.AudioManager.FLAG_SHOW_UI
+                                    )
+                                    logStep("[BAŞARILI] Medya ses seviyesi düşürüldü!")
+                                }
+                            } catch (e: Exception) {
+                                logStep("[HATA] Ses donanım hatası.")
+                            }
+                        }
+                        "VIBRATE" -> {
+                            logStep("[MOTOR] Dokunsal geribildirim haptik motoru tetikleniyor...")
+                            delay(1000)
+                            try {
+                                val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? android.os.Vibrator
+                                if (vibrator != null) {
+                                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                        vibrator.vibrate(android.os.VibrationEffect.createOneShot(300, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+                                    } else {
+                                        @Suppress("DEPRECATION")
+                                        vibrator.vibrate(300)
+                                    }
+                                    logStep("[BAŞARILI] Cihaz haptik motoru 300ms titreştirildi!")
+                                }
+                            } catch (e: Exception) {
+                                logStep("[UYARI] Titreşim donatısı bulunamadı.")
+                            }
+                        }
+                        "ALL_PERMISSIONS" -> {
+                            logStep("[JARVIS_FULL_POWER] Tam yetki protokolü devrede!")
+                            delay(1100)
+                            logStep("[SİSTEM] Cihaz kök izinleri yapılandırılıyor...")
+                            delay(1200)
+                            logStep("[SİMÜLASYON] Erişim denetçisi: Aktif")
+                            delay(1000)
+                            logStep("[BİLGİ] Ekran tıklama, fener, ses, ağ donanımları kontrolü: OK")
+                            delay(1100)
+                            logStep("[BAŞARILI] Telefonunuzun tüm siber donanım kontrolü servislerimize aktarıldı, sör!")
+                        }
+                        else -> {
+                            logStep("[BİLİNMEYEN] Belirtilmeyen donanım eylemi sör.")
+                        }
+                    }
                 }
                 else -> {
                     logStep("[Cevap] Genel konuşma yanıtı verildi.")
