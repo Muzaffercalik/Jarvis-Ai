@@ -1,0 +1,6 @@
+{
+  "name": "Jarvis AI",
+  "description": "Sesli komutlarla çalışan, telefon yönetimi ve görev otomasyonu yapabilen gelişmiş Jarvis Yapay Zeka Asistanı.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
