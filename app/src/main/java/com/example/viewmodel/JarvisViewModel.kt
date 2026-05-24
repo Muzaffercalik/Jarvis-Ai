@@ -86,7 +86,7 @@ class JarvisViewModel(private val repository: JarvisRepository) : ViewModel() {
         viewModelScope.launch {
             _isAnalyzing.value = true
             _jarvisSpeechResponse.value = "İstişare ediliyor sör..."
-            val response = JarvisBrain.analyzeCommand(command)
+            val response = JarvisBrain.analyzeCommand(command, context)
             _isAnalyzing.value = false
 
             _currentIntent.value = response

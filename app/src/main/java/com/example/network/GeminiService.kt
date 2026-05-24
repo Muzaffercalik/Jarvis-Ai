@@ -1,5 +1,7 @@
 package com.example.network
 
+import android.content.Context
+
 import com.example.BuildConfig
 import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
@@ -161,11 +163,14 @@ object JarvisBrain {
         Do not add any markup or markdown wraps like ```json in the actual voice response. We will request JSON MimeType so return pure JSON text only.
     """
 
-    suspend fun analyzeCommand(command: String): JarvisIntentResponse {
-        val apiKey = BuildConfig.GEMINI_API_KEY
+    suspend fun analyzeCommand(command: String, context: Context): JarvisIntentResponse {
+        val sharedPrefs = context.getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE)
+        val customKey = sharedPrefs.getString("custom_api_key", null)
+        val apiKey = if (!customKey.isNullOrBlank()) customKey.trim() else BuildConfig.GEMINI_API_KEY
+
         if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
             return JarvisIntentResponse(
-                explanation = "Lütfen AI Studio Secrets panelinden geçerli bir GEMINI_API_KEY tanımlayın, sör.",
+                explanation = "Lütfen AI Studio Secrets panelinden veya aşağıdaki panelden geçerli bir GEMINI_API_KEY tanımlayın, sör.",
                 intent = "SPEAK_ONLY"
             )
         }
@@ -185,6 +190,8 @@ object JarvisBrain {
 
         val modelsToTry = listOf(
             "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
             "gemini-3.5-flash"
         )
         
@@ -221,5 +228,57 @@ object JarvisBrain {
             explanation = "Bağlantıda bir aksama oldu sör. Detay: $errMsg",
             intent = "SPEAK_ONLY"
         )
+    }
+
+    suspend fun testConnection(context: Context, testKey: String): String {
+        val sharedPrefs = context.getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE)
+        val savedKey = sharedPrefs.getString("custom_api_key", null)
+        val key = testKey.trim().ifBlank { 
+            if (!savedKey.isNullOrBlank()) savedKey.trim() else BuildConfig.GEMINI_API_KEY 
+        }
+
+        if (key.isEmpty() || key == "MY_GEMINI_API_KEY") {
+            return "API anahtarı tanımlanmamış sör."
+        }
+
+        val requestBody = GenerateContentRequest(
+            contents = listOf(
+                Content(parts = listOf(Part(text = "Hello! respond with exactly one word: Success")))
+            ),
+            generationConfig = GenerationConfig(
+                temperature = 0.2
+            )
+        )
+
+        val modelsToTry = listOf(
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
+            "gemini-3.5-flash"
+        )
+
+        var lastException: Exception? = null
+        for (model in modelsToTry) {
+            try {
+                val response = RetrofitClient.service.generateContent(model, key, requestBody)
+                val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+                if (!text.isNullOrBlank()) {
+                    return "BAŞARILI! ($model denerken yanıt alındı. Sistem çalışıyor!)"
+                }
+            } catch (e: retrofit2.HttpException) {
+                val errorBodyString = e.response()?.errorBody()?.string()
+                val detailedMessage = try {
+                    val errorObj = RetrofitClient.jsonParser.adapter(Map::class.java).fromJson(errorBodyString ?: "") as? Map<*, *>
+                    val errorDetails = errorObj?.get("error") as? Map<*, *>
+                    errorDetails?.get("message")?.toString()
+                } catch (pe: Exception) {
+                    null
+                }
+                lastException = Exception("HTTP ${e.code()}: ${detailedMessage ?: errorBodyString ?: e.message()}", e)
+            } catch (e: Exception) {
+                lastException = e
+            }
+        }
+        return "BAĞLANTI HATASI: ${lastException?.localizedMessage ?: "Bilinmeyen hata"}"
     }
 }

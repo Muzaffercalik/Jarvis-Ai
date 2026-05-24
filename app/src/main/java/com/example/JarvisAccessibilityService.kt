@@ -52,7 +52,6 @@ class JarvisAccessibilityService : AccessibilityService() {
             val service = instance ?: return false
             val rootNode = service.rootInActiveWindow ?: return false
             val result = findAndClickNodeByText(rootNode, text)
-            rootNode.recycle()
             return result
         }
 
@@ -70,12 +69,10 @@ class JarvisAccessibilityService : AccessibilityService() {
                     if (parent.isClickable) {
                         val clicked = parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                         if (clicked) {
-                            parent.recycle()
                             return true
                         }
                     }
                     val nextParent = parent.parent
-                    parent.recycle()
                     parent = nextParent
                     depth++
                 }
@@ -85,7 +82,6 @@ class JarvisAccessibilityService : AccessibilityService() {
                 val child = node.getChild(i)
                 if (child != null) {
                     val clicked = findAndClickNodeByText(child, text)
-                    child.recycle()
                     if (clicked) return true
                 }
             }

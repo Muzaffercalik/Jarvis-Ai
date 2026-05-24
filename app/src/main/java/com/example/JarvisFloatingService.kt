@@ -23,6 +23,7 @@ import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import android.content.pm.ServiceInfo
 import com.example.network.GeminiApiService
 import com.example.network.JarvisIntentResponse
 import com.example.viewmodel.JarvisViewModel
@@ -56,7 +57,15 @@ class JarvisFloatingService : Service(), RecognitionListener {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildForegroundNotification("Sistem hazır sör.", false))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIFICATION_ID, 
+                buildForegroundNotification("Sistem hazır sör.", false),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, buildForegroundNotification("Sistem hazır sör.", false))
+        }
         
         initializeTts()
         initializeSpeechRecognizer()
@@ -265,7 +274,7 @@ class JarvisFloatingService : Service(), RecognitionListener {
         serviceScope.launch {
             try {
                 // Instantiating/calling the shared network Gemini implementation dynamically
-                val response = com.example.network.JarvisBrain.analyzeCommand(command)
+                val response = com.example.network.JarvisBrain.analyzeCommand(command, this@JarvisFloatingService)
                 
                 // Speak response
                 speakTts(response.explanation)
@@ -576,7 +585,8 @@ class JarvisOrbView(context: Context) : View(context) {
         super.onDraw(canvas)
         val cx = width / 2f
         val cy = height / 2f
-        val baseRadius = Math.min(cx, cy) - 8f
+        val baseRadius = (Math.min(cx, cy) - 8f).coerceAtLeast(1.0f)
+        val finalPulseRadius = (baseRadius * pulseScale).coerceAtLeast(1.0f)
         
         val primeColor = when (state) {
             JarvisFloatingService.OrbState.LISTENING -> Color.parseColor("#EF4444") // Coral Red
@@ -593,10 +603,10 @@ class JarvisOrbView(context: Context) : View(context) {
         }
 
         // 1. Draw solid circular visual backgrounds
-        val radGrad = RadialGradient(cx, cy, baseRadius * pulseScale, primeColor, radialColor, Shader.TileMode.CLAMP)
+        val radGrad = RadialGradient(cx, cy, finalPulseRadius, primeColor, radialColor, Shader.TileMode.CLAMP)
         glowPaint.shader = radGrad
         glowPaint.style = Paint.Style.FILL
-        canvas.drawCircle(cx, cy, baseRadius * pulseScale, glowPaint)
+        canvas.drawCircle(cx, cy, finalPulseRadius, glowPaint)
         
         // 2. Clear shader for vector elements
         glowPaint.shader = null
@@ -609,14 +619,14 @@ class JarvisOrbView(context: Context) : View(context) {
         
         canvas.save()
         canvas.rotate(spinAngle, cx, cy)
-        canvas.drawCircle(cx, cy, baseRadius * pulseScale * 0.9f, linePaint)
+        canvas.drawCircle(cx, cy, (finalPulseRadius * 0.9f).coerceAtLeast(1.0f), linePaint)
         canvas.restore()
         
         // 4. Draw core visual
         linePaint.pathEffect = null
         linePaint.style = Paint.Style.FILL
         linePaint.color = primeColor
-        canvas.drawCircle(cx, cy, baseRadius * 0.35f, linePaint)
+        canvas.drawCircle(cx, cy, (baseRadius * 0.35f).coerceAtLeast(1.0f), linePaint)
         
         // 5. Draw simple microphone vector inside center core
         linePaint.color = Color.BLACK

@@ -3,7 +3,9 @@ package com.example
 import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
+import androidx.core.content.ContextCompat
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -46,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.database.*
+import kotlinx.coroutines.launch
 import com.example.speech.JarvisSpeechManager
 import com.example.ui.theme.*
 import com.example.viewmodel.JarvisTab
@@ -362,9 +365,10 @@ fun JarvisCoreVisualizer(
                 )
             )
 
+            val safeInverseScale = if (pulseScale > 0.01f) 1f / pulseScale else 1.0f
             drawCircle(
                 color = NeonBlue.copy(alpha = 0.5f),
-                radius = ((baseRadius - 16.dp.toPx()) * (1f / pulseScale)).coerceAtLeast(0f),
+                radius = ((baseRadius - 16.dp.toPx()) * safeInverseScale).coerceAtLeast(0f),
                 style = Stroke(
                     width = 1.5.dp.toPx(),
                     pathEffect = PathEffect.dashPathEffect(
@@ -524,6 +528,27 @@ fun JarvisHudView(
 ) {
     val shortcuts by viewModel.shortcuts.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    
+    val orbPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            try {
+                val serviceIntent = Intent(context, JarvisFloatingService::class.java)
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    context.startForegroundService(serviceIntent)
+                } else {
+                    context.startService(serviceIntent)
+                }
+                Toast.makeText(context, "Jarvis Asistan Küresi aktif edildi sör.", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "Servis başlatılamadı sör: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+            }
+        } else {
+            Toast.makeText(context, "Asistan küresi için Mikrofon izni gereklidir sör.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     val keyboardOptions = KeyboardActionsWithFloatingBubbles(
         shortcuts = shortcuts,
         onShortcutClick = { phrase ->
@@ -806,20 +831,33 @@ fun JarvisHudView(
                                     )
                                     context.startActivity(intent)
                                 } else {
-                                    val serviceIntent = Intent(context, JarvisFloatingService::class.java)
-                                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                                        context.startForegroundService(serviceIntent)
+                                    val hasMicPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                                    if (!hasMicPermission) {
+                                        orbPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                     } else {
-                                        context.startService(serviceIntent)
+                                        try {
+                                            val serviceIntent = Intent(context, JarvisFloatingService::class.java)
+                                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                                context.startForegroundService(serviceIntent)
+                                            } else {
+                                                context.startService(serviceIntent)
+                                            }
+                                            isOrbActive = true
+                                            Toast.makeText(context, "Jarvis Asistan Küresi aktif edildi sör.", Toast.LENGTH_SHORT).show()
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Servis başlatılamadı sör: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                                        }
                                     }
-                                    isOrbActive = true
-                                    Toast.makeText(context, "Jarvis Asistan Küresi aktif edildi sör.", Toast.LENGTH_SHORT).show()
                                 }
                             } else {
-                                val serviceIntent = Intent(context, JarvisFloatingService::class.java)
-                                context.stopService(serviceIntent)
-                                isOrbActive = false
-                                Toast.makeText(context, "Jarvis Asistan Küresi kapatıldı.", Toast.LENGTH_SHORT).show()
+                                try {
+                                    val serviceIntent = Intent(context, JarvisFloatingService::class.java)
+                                    context.stopService(serviceIntent)
+                                    isOrbActive = false
+                                    Toast.makeText(context, "Jarvis Asistan Küresi kapatıldı.", Toast.LENGTH_SHORT).show()
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Servis durdurulamadı sör: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                                }
                             }
                         }
                     )
@@ -876,6 +914,127 @@ fun JarvisHudView(
                             color = Color.White,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+
+        // 3. API Key Management Panel
+        item {
+            val sharedPrefs = context.getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE)
+            if (sharedPrefs.getString("custom_api_key", "").isNullOrBlank()) {
+                sharedPrefs.edit().putString("custom_api_key", "AIzaSyCcYLVvFC76ZRnMlwDN9cjGOWJrCE6bO5o").apply()
+            }
+            var keyInput by remember { mutableStateOf(sharedPrefs.getString("custom_api_key", "AIzaSyCcYLVvFC76ZRnMlwDN9cjGOWJrCE6bO5o") ?: "AIzaSyCcYLVvFC76ZRnMlwDN9cjGOWJrCE6bO5o") }
+            var testResult by remember { mutableStateOf("") }
+            var isTesting by remember { mutableStateOf(false) }
+            val coroutineScope = rememberCoroutineScope()
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, NeonCyan.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                    .background(TechPanel.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "CEYVIS API ANAHTARI VE GİRİŞ DIAGNOSTIĞI",
+                    color = NeonCyan,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold
+                )
+
+                HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+
+                Text(
+                    text = "Eğer siber bağlantı kesiliyorsa veya HTTP 403 Forbidden hatası alıyorsanız, aşağıya kendi geçerli Gemini API anahtarınızı (AIzaSy...) enjekte edin sör.",
+                    color = SoftGrey,
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp
+                )
+
+                OutlinedTextField(
+                    value = keyInput,
+                    onValueChange = { newValue ->
+                        keyInput = newValue
+                        sharedPrefs.edit().putString("custom_api_key", newValue).apply()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("api_key_input"),
+                    placeholder = { Text("AI Studio API Anahtarı girin (AIzaSy...)...", color = SoftGrey, fontSize = 11.sp) },
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace
+                    ),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = NeonCyan,
+                        unfocusedBorderColor = NeonBlue.copy(alpha = 0.3f),
+                        unfocusedContainerColor = SpaceNavy.copy(alpha = 0.7f),
+                        focusedContainerColor = SpaceNavy.copy(alpha = 0.7f)
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (keyInput.isBlank()) "Varsayılan Çekirdek Anahtarı Aktif" else "Özel Anahtar Enjekte Edildi",
+                        color = if (keyInput.isBlank()) TechViolet else SuccessGreen,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Button(
+                        onClick = {
+                            isTesting = true
+                            testResult = "Bağlantı tüneli sorgulanıyor..."
+                            coroutineScope.launch {
+                                val result = com.example.network.JarvisBrain.testConnection(context, keyInput)
+                                testResult = result
+                                isTesting = false
+                            }
+                        },
+                        enabled = !isTesting,
+                        colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Text(
+                            text = if (isTesting) "Sorgulanıyor..." else "Bağlantıyı Test Et",
+                            color = SpaceNavy,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                if (testResult.isNotEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(
+                                if (testResult.contains("BAŞARILI")) SuccessGreen.copy(alpha = 0.12f)
+                                else ErrorRed.copy(alpha = 0.12f)
+                            )
+                            .padding(8.dp)
+                    ) {
+                        Text(
+                            text = testResult,
+                            color = if (testResult.contains("BAŞARILI")) SuccessGreen else ErrorRed,
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace,
+                            lineHeight = 14.sp
                         )
                     }
                 }
