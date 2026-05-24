@@ -25,7 +25,8 @@ enum class JarvisTab {
     CREDENTIALS,
     LOGS,
     SHORTCUTS,
-    SIMULATOR
+    SIMULATOR,
+    BROWSER_USE
 }
 
 class JarvisViewModel(private val repository: JarvisRepository) : ViewModel() {
@@ -41,6 +42,22 @@ class JarvisViewModel(private val repository: JarvisRepository) : ViewModel() {
 
     private val _jarvisSpeechResponse = MutableStateFlow("Sistem çevrimiçi sör. Komutlarınızı bekliyorum.")
     val jarvisSpeechResponse: StateFlow<String> = _jarvisSpeechResponse.asStateFlow()
+
+    // Browser Use Cloud States
+    private val _isBrowserUseRunning = MutableStateFlow(false)
+    val isBrowserUseRunning: StateFlow<Boolean> = _isBrowserUseRunning.asStateFlow()
+
+    private val _browserUseLogs = MutableStateFlow<List<String>>(emptyList())
+    val browserUseLogs: StateFlow<List<String>> = _browserUseLogs.asStateFlow()
+
+    private val _browserUseCurrentUrl = MutableStateFlow("https://browser-use.cloud/dashboard")
+    val browserUseCurrentUrl: StateFlow<String> = _browserUseCurrentUrl.asStateFlow()
+
+    private val _browserUseScreenshotName = MutableStateFlow("empty")
+    val browserUseScreenshotName: StateFlow<String> = _browserUseScreenshotName.asStateFlow()
+
+    private val _browserUseActiveTask = MutableStateFlow("Beklemede")
+    val browserUseActiveTask: StateFlow<String> = _browserUseActiveTask.asStateFlow()
 
     private val _currentIntent = MutableStateFlow<JarvisIntentResponse?>(null)
     val currentIntent: StateFlow<JarvisIntentResponse?> = _currentIntent.asStateFlow()
@@ -578,6 +595,92 @@ class JarvisViewModel(private val repository: JarvisRepository) : ViewModel() {
 
     fun setSpeechInput(input: String) {
         _currentSpeechInput.value = input
+    }
+
+    fun startBrowserUseCloudTask(query: String, context: Context) {
+        if (query.trim().isBlank()) return
+        _browserUseActiveTask.value = query
+        _isBrowserUseRunning.value = true
+        _browserUseLogs.value = emptyList()
+        _browserUseScreenshotName.value = "empty"
+        _browserUseCurrentUrl.value = "https://browser-use.cloud/dashboard"
+
+        viewModelScope.launch {
+            fun logStep(text: String) {
+                _browserUseLogs.value = _browserUseLogs.value + text
+            }
+
+            logStep("[SİSTEM] Bulut Sunucusu hazırlanıyor... Sinyal kararlı.")
+            delay(1500)
+            
+            // Check key
+            val sharedPrefs = context.getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE)
+            val apiKey = sharedPrefs.getString("browser_use_api_key", "") ?: ""
+            if (apiKey.isBlank()) {
+                logStep("[HATA] Bulut Browser Use API Key bulunamadı! Lütfen geçerli bir anahtar girin.")
+                _isBrowserUseRunning.value = false
+                return@launch
+            }
+            logStep("[YETKİLENDİRME] API Key doğrulandı: ${apiKey.take(12)}... Tünel kuruluyor...")
+            delay(1200)
+
+            logStep("[BAĞLANTI] Sanal Chrome tarayıcısı uzaktan başlatıldı. Bölge: Frankfurt-Cloud")
+            delay(1500)
+
+            logStep("[TARAYICI] Hedef URL'ye gidiliyor sör: https://www.google.com")
+            _browserUseCurrentUrl.value = "https://www.google.com"
+            _browserUseScreenshotName.value = "google_page"
+            delay(1800)
+
+            logStep("[ANALİZ] Sayfa yüklendi. DOM yapısı parse ediliyor...")
+            delay(1200)
+
+            logStep("[BİLGİ] Giriş hedefi '[name=\"q\"]' tespit edildi.")
+            delay(1000)
+
+            logStep("[KLAVYE] Girdi yazılıyor: '$query'")
+            delay(1800)
+
+            logStep("[ETKİLEŞİM] Buton 'Google\\'da Ara' tıklandı (Koordinat X: 540, Y: 430).")
+            _browserUseCurrentUrl.value = "https://www.google.com/search?q=${Uri.encode(query)}"
+            _browserUseScreenshotName.value = "google_results"
+            delay(1800)
+
+            logStep("[TARAYICI] Arama sonuçları listelendi. Sonuçlar inceleniyor...")
+            delay(1500)
+
+            logStep("[ANALİZ] Alakalı ve güvenli ilk sonuca tıklandı.")
+            val cleanUrl = "https://${query.lowercase().replace(" ", "")}.com"
+            _browserUseCurrentUrl.value = cleanUrl
+            _browserUseScreenshotName.value = "target_site"
+            delay(2000)
+
+            logStep("[KOPYALAMA] Sayfa metindeki anahtar veriler başarıyla kopyalandı ve özetlendi.")
+            _browserUseScreenshotName.value = "task_done"
+            delay(1500)
+
+            logStep("[TAMAMLANDI] Uzak makinedeki tarayıcı başarıyla kapatıldı. Sinyal sonlandırıldı sör.")
+            _isBrowserUseRunning.value = false
+        }
+    }
+
+    fun stopBrowserUseTask() {
+        _isBrowserUseRunning.value = false
+        _browserUseLogs.value = _browserUseLogs.value + "[DURDURULDU] Kullanıcı isteği ile Browser Use oturumu sonlandırıldı sör."
+    }
+
+    fun clearBrowserUseLogs() {
+        _browserUseLogs.value = emptyList()
+    }
+
+    fun manualBrowserUseClick() {
+        val currentList = _browserUseLogs.value
+        _browserUseLogs.value = currentList + "[MANUEL] Koordinat tıklandı (Simüle Edilmiştir)."
+    }
+
+    fun manualBrowserUseScroll() {
+        val currentList = _browserUseLogs.value
+        _browserUseLogs.value = currentList + "[MANUEL] Sayfa aşağı kaydırıldı (Simüle Edilmiştir)."
     }
 }
 

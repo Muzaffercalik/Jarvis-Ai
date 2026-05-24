@@ -16,6 +16,10 @@ import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
 import java.util.concurrent.TimeUnit
+import org.json.JSONObject
+import org.json.JSONArray
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 @JsonClass(generateAdapter = true)
 data class Part(
@@ -163,122 +167,324 @@ object JarvisBrain {
         Do not add any markup or markdown wraps like ```json in the actual voice response. We will request JSON MimeType so return pure JSON text only.
     """
 
+    fun detectApiKeyType(key: String): String {
+        val k = key.trim()
+        return when {
+            k.startsWith("AIzaSy") -> "GEMINI"
+            k.startsWith("sk-or-") -> "OPENROUTER"
+            k.startsWith("sk-ant-") -> "CLAUDE"
+            k.startsWith("xai-") -> "GROK"
+            k.startsWith("bu_") -> "BROWSER_USE"
+            k.startsWith("sk-") -> "OPENAI"
+            else -> "UNKNOWN"
+        }
+    }
+
+    private suspend fun callGenericPostApi(url: String, headers: Map<String, String>, jsonBody: String): String = withContext(Dispatchers.IO) {
+        val client = OkHttpClient.Builder()
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+        
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        val body = okhttp3.RequestBody.create(mediaType, jsonBody)
+        
+        val requestBuilder = okhttp3.Request.Builder()
+            .url(url)
+            .post(body)
+            
+        for ((key, value) in headers) {
+            requestBuilder.addHeader(key, value)
+        }
+        
+        client.newCall(requestBuilder.build()).execute().use { response ->
+            val responseBody = response.body?.string() ?: ""
+            if (!response.isSuccessful) {
+                throw Exception("HTTP ${response.code}: ${responseBody.ifBlank { response.message }}")
+            }
+            return@withContext responseBody
+        }
+    }
+
+    private fun parseLlmJson(jsonText: String): JarvisIntentResponse {
+        var clean = jsonText.trim()
+        if (clean.startsWith("```")) {
+            clean = clean.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+        }
+        val obj = JSONObject(clean)
+        return JarvisIntentResponse(
+            explanation = obj.optString("explanation", "Anlaşıldı sör."),
+            intent = obj.optString("intent", "SPEAK_ONLY"),
+            searchQuery = obj.optString("searchQuery", ""),
+            inputText = obj.optString("inputText", ""),
+            clickTarget = obj.optString("clickTarget", ""),
+            targetUrl = obj.optString("targetUrl", ""),
+            sharePlatform = obj.optString("sharePlatform", ""),
+            shareRecipient = obj.optString("shareRecipient", ""),
+            targetContext = obj.optString("targetContext", ""),
+            controlAction = obj.optString("controlAction", "")
+        )
+    }
+
     suspend fun analyzeCommand(command: String, context: Context): JarvisIntentResponse {
         val sharedPrefs = context.getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE)
-        val customKey = sharedPrefs.getString("custom_api_key", null)
-        val apiKey = if (!customKey.isNullOrBlank()) customKey.trim() else BuildConfig.GEMINI_API_KEY
+        val activeEngine = sharedPrefs.getString("active_ai_engine", "GEMINI") ?: "GEMINI"
+        
+        try {
+            when (activeEngine.uppercase()) {
+                "GEMINI" -> {
+                    val customKey = sharedPrefs.getString("custom_api_key", null)
+                    val apiKey = if (!customKey.isNullOrBlank()) customKey.trim() else BuildConfig.GEMINI_API_KEY
+                    if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
+                        return JarvisIntentResponse(
+                            explanation = "Lütfen AI Studio Secrets panelinden veya aşağıdaki panelden geçerli bir GEMINI_API_KEY tanımlayın, sör.",
+                            intent = "SPEAK_ONLY"
+                        )
+                    }
 
-        if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
+                    val requestBody = GenerateContentRequest(
+                        contents = listOf(Content(parts = listOf(Part(text = command)))),
+                        generationConfig = GenerationConfig(temperature = 0.2, responseMimeType = "application/json"),
+                        systemInstruction = SystemInstruction(parts = listOf(Part(text = SYSTEM_PROMPT)))
+                    )
+
+                    val modelsToTry = listOf("gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-3.5-flash")
+                    var lastEx: Exception? = null
+                    for (model in modelsToTry) {
+                        try {
+                            val response = RetrofitClient.service.generateContent(model, apiKey, requestBody)
+                            val jsonText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+                            if (jsonText != null) {
+                                return parseLlmJson(jsonText)
+                            }
+                        } catch (e: Exception) {
+                            lastEx = e
+                        }
+                    }
+                    throw lastEx ?: Exception("Gemini API çağrılamadı sör.")
+                }
+                
+                "OPENAI" -> {
+                    val apiKey = sharedPrefs.getString("openai_api_key", "") ?: ""
+                    if (apiKey.isBlank()) {
+                        return JarvisIntentResponse(
+                            explanation = "Lütfen ayarlardan geçerli bir OpenAI API anahtarı tanımlayın sör.",
+                            intent = "SPEAK_ONLY"
+                        )
+                    }
+
+                    val json = JSONObject().apply {
+                        put("model", "gpt-4o-mini")
+                        put("temperature", 0.2)
+                        put("response_format", JSONObject().put("type", "json_object"))
+                        put("messages", JSONArray().apply {
+                            put(JSONObject().put("role", "system").put("content", SYSTEM_PROMPT))
+                            put(JSONObject().put("role", "user").put("content", command))
+                        })
+                    }
+
+                    val h = mapOf("Authorization" to "Bearer $apiKey")
+                    val resString = callGenericPostApi("https://api.openai.com/v1/chat/completions", h, json.toString())
+                    
+                    val obj = JSONObject(resString)
+                    val contentText = obj.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
+                    return parseLlmJson(contentText)
+                }
+
+                "OPENROUTER" -> {
+                    val apiKey = sharedPrefs.getString("openrouter_api_key", "") ?: ""
+                    if (apiKey.isBlank()) {
+                        return JarvisIntentResponse(
+                            explanation = "Lütfen ayarlardan geçerli bir OpenRouter API anahtarı tanımlayın sör.",
+                            intent = "SPEAK_ONLY"
+                        )
+                    }
+
+                    val json = JSONObject().apply {
+                        put("model", "google/gemini-2.5-flash")
+                        put("temperature", 0.2)
+                        put("messages", JSONArray().apply {
+                            put(JSONObject().put("role", "system").put("content", SYSTEM_PROMPT))
+                            put(JSONObject().put("role", "user").put("content", command))
+                        })
+                    }
+
+                    val h = mapOf(
+                        "Authorization" to "Bearer $apiKey",
+                        "HTTP-Referer" to "https://ai.studio/build",
+                        "X-Title" to "Jarvis Pro"
+                    )
+                    val resString = callGenericPostApi("https://openrouter.ai/api/v1/chat/completions", h, json.toString())
+                    
+                    val obj = JSONObject(resString)
+                    val contentText = obj.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
+                    return parseLlmJson(contentText)
+                }
+
+                "CLAUDE" -> {
+                    val apiKey = sharedPrefs.getString("claude_api_key", "") ?: ""
+                    if (apiKey.isBlank()) {
+                        return JarvisIntentResponse(
+                            explanation = "Lütfen ayarlardan geçerli bir Anthropic Claude API anahtarı tanımlayın sör.",
+                            intent = "SPEAK_ONLY"
+                        )
+                    }
+
+                    val json = JSONObject().apply {
+                        put("model", "claude-3-5-sonnet-20241022")
+                        put("max_tokens", 1024)
+                        put("system", SYSTEM_PROMPT)
+                        put("temperature", 0.2)
+                        put("messages", JSONArray().apply {
+                            put(JSONObject().put("role", "user").put("content", command))
+                        })
+                    }
+
+                    val h = mapOf(
+                        "x-api-key" to apiKey,
+                        "anthropic-version" to "2023-06-01"
+                    )
+                    val resString = callGenericPostApi("https://api.anthropic.com/v1/messages", h, json.toString())
+                    
+                    val obj = JSONObject(resString)
+                    val contentText = obj.getJSONArray("content").getJSONObject(0).getString("text")
+                    return parseLlmJson(contentText)
+                }
+
+                "GROK" -> {
+                    val apiKey = sharedPrefs.getString("grok_api_key", "") ?: ""
+                    if (apiKey.isBlank()) {
+                        return JarvisIntentResponse(
+                            explanation = "Lütfen ayarlardan geçerli bir Grok API anahtarı tanımlayın sör.",
+                            intent = "SPEAK_ONLY"
+                        )
+                    }
+
+                    val json = JSONObject().apply {
+                        put("model", "grok-2-latest")
+                        put("temperature", 0.2)
+                        put("messages", JSONArray().apply {
+                            put(JSONObject().put("role", "system").put("content", SYSTEM_PROMPT))
+                            put(JSONObject().put("role", "user").put("content", command))
+                        })
+                    }
+
+                    val h = mapOf("Authorization" to "Bearer $apiKey")
+                    val resString = callGenericPostApi("https://api.x.ai/v1/chat/completions", h, json.toString())
+                    
+                    val obj = JSONObject(resString)
+                    val contentText = obj.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
+                    return parseLlmJson(contentText)
+                }
+                
+                else -> {
+                    return JarvisIntentResponse("Tanımsız AI Motoru seçildi sör.", "SPEAK_ONLY")
+                }
+            }
+        } catch (e: Exception) {
             return JarvisIntentResponse(
-                explanation = "Lütfen AI Studio Secrets panelinden veya aşağıdaki panelden geçerli bir GEMINI_API_KEY tanımlayın, sör.",
+                explanation = "Bağlantıda bir aksama oldu sör. Detay: ${e.localizedMessage}",
                 intent = "SPEAK_ONLY"
             )
         }
-
-        val requestBody = GenerateContentRequest(
-            contents = listOf(
-                Content(parts = listOf(Part(text = command)))
-            ),
-            generationConfig = GenerationConfig(
-                temperature = 0.2,
-                responseMimeType = "application/json"
-            ),
-            systemInstruction = SystemInstruction(
-                parts = listOf(Part(text = SYSTEM_PROMPT))
-            )
-        )
-
-        val modelsToTry = listOf(
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
-            "gemini-1.5-flash",
-            "gemini-3.5-flash"
-        )
-        
-        var lastException: Exception? = null
-        
-        for (model in modelsToTry) {
-            try {
-                val response = RetrofitClient.service.generateContent(model, apiKey, requestBody)
-                val jsonText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-                if (jsonText != null) {
-                    val parsed = RetrofitClient.jsonParser.adapter(JarvisIntentResponse::class.java).fromJson(jsonText)
-                    if (parsed != null) {
-                        return parsed
-                    }
-                }
-            } catch (e: retrofit2.HttpException) {
-                val errorBodyString = e.response()?.errorBody()?.string()
-                val detailedMessage = try {
-                    val errorObj = RetrofitClient.jsonParser.adapter(Map::class.java).fromJson(errorBodyString ?: "") as? Map<*, *>
-                    val errorDetails = errorObj?.get("error") as? Map<*, *>
-                    errorDetails?.get("message")?.toString()
-                } catch (pe: Exception) {
-                    null
-                }
-                val finalMsg = detailedMessage ?: errorBodyString ?: e.message()
-                lastException = Exception("HTTP ${e.code()}: $finalMsg", e)
-            } catch (e: Exception) {
-                lastException = e
-            }
-        }
-        
-        val errMsg = lastException?.localizedMessage ?: "Bilinmeyen Hata"
-        return JarvisIntentResponse(
-            explanation = "Bağlantıda bir aksama oldu sör. Detay: $errMsg",
-            intent = "SPEAK_ONLY"
-        )
     }
 
     suspend fun testConnection(context: Context, testKey: String): String {
         val sharedPrefs = context.getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE)
-        val savedKey = sharedPrefs.getString("custom_api_key", null)
-        val key = testKey.trim().ifBlank { 
-            if (!savedKey.isNullOrBlank()) savedKey.trim() else BuildConfig.GEMINI_API_KEY 
-        }
+        val activeEngine = sharedPrefs.getString("active_ai_engine", "GEMINI") ?: "GEMINI"
+        val trimmedKey = testKey.trim()
 
-        if (key.isEmpty() || key == "MY_GEMINI_API_KEY") {
-            return "API anahtarı tanımlanmamış sör."
-        }
+        try {
+            when (activeEngine.uppercase()) {
+                "GEMINI" -> {
+                    val fallbackKey = sharedPrefs.getString("custom_api_key", null)
+                    val key = trimmedKey.ifBlank { if (!fallbackKey.isNullOrBlank()) fallbackKey.trim() else BuildConfig.GEMINI_API_KEY }
+                    if (key.isEmpty() || key == "MY_GEMINI_API_KEY") return "API anahtarı tanımlanmamış sör."
 
-        val requestBody = GenerateContentRequest(
-            contents = listOf(
-                Content(parts = listOf(Part(text = "Hello! respond with exactly one word: Success")))
-            ),
-            generationConfig = GenerationConfig(
-                temperature = 0.2
-            )
-        )
+                    val requestBody = GenerateContentRequest(
+                        contents = listOf(Content(parts = listOf(Part(text = "Hello! respond with exactly one word: Success")))),
+                        generationConfig = GenerationConfig(temperature = 0.2)
+                    )
 
-        val modelsToTry = listOf(
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
-            "gemini-1.5-flash",
-            "gemini-3.5-flash"
-        )
-
-        var lastException: Exception? = null
-        for (model in modelsToTry) {
-            try {
-                val response = RetrofitClient.service.generateContent(model, key, requestBody)
-                val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-                if (!text.isNullOrBlank()) {
-                    return "BAŞARILI! ($model denerken yanıt alındı. Sistem çalışıyor!)"
+                    val response = RetrofitClient.service.generateContent("gemini-2.5-flash", key, requestBody)
+                    val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+                    return if (!text.isNullOrBlank()) "BAŞARILI! (Google Gemini tüneli aktif sör.)" else "Başarısız boş yanıt sör."
                 }
-            } catch (e: retrofit2.HttpException) {
-                val errorBodyString = e.response()?.errorBody()?.string()
-                val detailedMessage = try {
-                    val errorObj = RetrofitClient.jsonParser.adapter(Map::class.java).fromJson(errorBodyString ?: "") as? Map<*, *>
-                    val errorDetails = errorObj?.get("error") as? Map<*, *>
-                    errorDetails?.get("message")?.toString()
-                } catch (pe: Exception) {
-                    null
+                
+                "OPENAI" -> {
+                    val fallbackKey = sharedPrefs.getString("openai_api_key", "") ?: ""
+                    val key = trimmedKey.ifBlank { fallbackKey }
+                    if (key.isBlank()) return "OpenAI anahtarı tanımlanmamış sör."
+
+                    val json = JSONObject().apply {
+                        put("model", "gpt-4o-mini")
+                        put("temperature", 0.2)
+                        put("messages", JSONArray().apply {
+                            put(JSONObject().put("role", "user").put("content", "Hello! Respond with 'Connected'"))
+                        })
+                    }
+                    val h = mapOf("Authorization" to "Bearer $key")
+                    callGenericPostApi("https://api.openai.com/v1/chat/completions", h, json.toString())
+                    return "BAŞARILI! (OpenAI tüneli kuruldu, gpt-4o-mini yanıt veriyor!)"
                 }
-                lastException = Exception("HTTP ${e.code()}: ${detailedMessage ?: errorBodyString ?: e.message()}", e)
-            } catch (e: Exception) {
-                lastException = e
+
+                "OPENROUTER" -> {
+                    val fallbackKey = sharedPrefs.getString("openrouter_api_key", "") ?: ""
+                    val key = trimmedKey.ifBlank { fallbackKey }
+                    if (key.isBlank()) return "OpenRouter anahtarı tanımlanmamış sör."
+
+                    val json = JSONObject().apply {
+                        put("model", "google/gemini-2.5-flash")
+                        put("temperature", 0.2)
+                        put("messages", JSONArray().apply {
+                            put(JSONObject().put("role", "user").put("content", "Hello!"))
+                        })
+                    }
+                    val h = mapOf("Authorization" to "Bearer $key")
+                    callGenericPostApi("https://openrouter.ai/api/v1/chat/completions", h, json.toString())
+                    return "BAŞARILI! (OpenRouter tüneli kuruldu!)"
+                }
+
+                "CLAUDE" -> {
+                    val fallbackKey = sharedPrefs.getString("claude_api_key", "") ?: ""
+                    val key = trimmedKey.ifBlank { fallbackKey }
+                    if (key.isBlank()) return "Claude anahtarı tanımlanmamış sör."
+
+                    val json = JSONObject().apply {
+                        put("model", "claude-3-5-sonnet-20241022")
+                        put("max_tokens", 50)
+                        put("temperature", 0.2)
+                        put("messages", JSONArray().apply {
+                            put(JSONObject().put("role", "user").put("content", "Hello!"))
+                        })
+                    }
+                    val h = mapOf("x-api-key" to key, "anthropic-version" to "2023-06-01")
+                    callGenericPostApi("https://api.anthropic.com/v1/messages", h, json.toString())
+                    return "BAŞARILI! (Anthropic Claude tüneliaktif sör!)"
+                }
+
+                "GROK" -> {
+                    val fallbackKey = sharedPrefs.getString("grok_api_key", "") ?: ""
+                    val key = trimmedKey.ifBlank { fallbackKey }
+                    if (key.isBlank()) return "Grok anahtarı tanımlanmamış sör."
+
+                    val json = JSONObject().apply {
+                        put("model", "grok-2-latest")
+                        put("temperature", 0.2)
+                        put("messages", JSONArray().apply {
+                            put(JSONObject().put("role", "user").put("content", "Hello!"))
+                        })
+                    }
+                    val h = mapOf("Authorization" to "Bearer $key")
+                    callGenericPostApi("https://api.x.ai/v1/chat/completions", h, json.toString())
+                    return "BAŞARILI! (xAI Grok tüneli kuruldu!)"
+                }
+                
+                else -> return "Sistemsel Hata: Bilinmeyen Motor sör."
             }
+        } catch (e: Exception) {
+            return "BAĞLANTI HATASİ: ${e.localizedMessage ?: "Bilinmeyen hata"}"
         }
-        return "BAĞLANTI HATASI: ${lastException?.localizedMessage ?: "Bilinmeyen hata"}"
     }
 }

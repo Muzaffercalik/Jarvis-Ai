@@ -212,6 +212,9 @@ fun JarvisMainScreen(
                     JarvisTab.LOGS -> {
                         JarvisLogsView(viewModel = viewModel)
                     }
+                    JarvisTab.BROWSER_USE -> {
+                        JarvisBrowserUseView(viewModel = viewModel)
+                    }
                 }
             }
         }
@@ -502,6 +505,20 @@ fun JarvisNavigationBar(
             onClick = { onTabSelected(JarvisTab.LOGS) },
             icon = { Icon(Icons.Default.List, contentDescription = "Geçmiş", modifier = Modifier.testTag("nav_logs")) },
             label = { Text("Geçmiş", fontSize = 9.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold) },
+            colors = NavigationBarItemDefaults.colors(
+                selectedIconColor = NeonCyan,
+                selectedTextColor = NeonCyan,
+                unselectedIconColor = SoftGrey,
+                unselectedTextColor = SoftGrey,
+                indicatorColor = Color.White.copy(alpha = 0.05f)
+            )
+        )
+
+        NavigationBarItem(
+            selected = activeTab == JarvisTab.BROWSER_USE,
+            onClick = { onTabSelected(JarvisTab.BROWSER_USE) },
+            icon = { Icon(Icons.Default.Language, contentDescription = "Tarayıcı", modifier = Modifier.testTag("nav_browser")) },
+            label = { Text("Bulut", fontSize = 9.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold) },
             colors = NavigationBarItemDefaults.colors(
                 selectedIconColor = NeonCyan,
                 selectedTextColor = NeonCyan,
@@ -918,30 +935,44 @@ fun JarvisHudView(
                     }
                 }
             }
-        }
 
-        // 3. API Key Management Panel
+        // 3. Smart API Key & Dynamic AI Engine Hub
         item {
             val sharedPrefs = context.getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE)
-            val currentSavedKey = sharedPrefs.getString("custom_api_key", "") ?: ""
-            if (currentSavedKey.isBlank() || currentSavedKey == "AIzaSyCcYLVvFC76ZRnMlwDN9cjGOWJrCE6bO5o") {
-                sharedPrefs.edit().putString("custom_api_key", "AIzaSyA2j_H4g2JwzKgN9tbXMQH3Apl6Cks0nks").apply()
+            
+            // Set initial browser use key if not present
+            val savedBuKey = sharedPrefs.getString("browser_use_api_key", "") ?: ""
+            if (savedBuKey.isBlank()) {
+                sharedPrefs.edit().putString("browser_use_api_key", "bu_0zjrgu1oPJQav7GSJU4LhiL6vxggjdTvCpdrnhh4ppY").apply()
             }
-            var keyInput by remember { mutableStateOf(sharedPrefs.getString("custom_api_key", "AIzaSyA2j_H4g2JwzKgN9tbXMQH3Apl6Cks0nks") ?: "AIzaSyA2j_H4g2JwzKgN9tbXMQH3Apl6Cks0nks") }
+            
+            var activeEngine by remember { mutableStateOf(sharedPrefs.getString("active_ai_engine", "GEMINI") ?: "GEMINI") }
+            var keyPasterInput by remember { mutableStateOf("") }
+            var detectedEngine by remember { mutableStateOf("Bilinmiyor") }
+            
+            // Retrieve actual values
+            var geminiKey by remember { mutableStateOf(sharedPrefs.getString("custom_api_key", "AIzaSyA2j_H4g2JwzKgN9tbXMQH3Apl6Cks0nks") ?: "AIzaSyA2j_H4g2JwzKgN9tbXMQH3Apl6Cks0nks") }
+            var openaiKey by remember { mutableStateOf(sharedPrefs.getString("openai_api_key", "") ?: "") }
+            var openrouterKey by remember { mutableStateOf(sharedPrefs.getString("openrouter_api_key", "") ?: "") }
+            var claudeKey by remember { mutableStateOf(sharedPrefs.getString("claude_api_key", "") ?: "") }
+            var grokKey by remember { mutableStateOf(sharedPrefs.getString("grok_api_key", "") ?: "") }
+            var browserUseKey by remember { mutableStateOf(sharedPrefs.getString("browser_use_api_key", "bu_0zjrgu1oPJQav7GSJU4LhiL6vxggjdTvCpdrnhh4ppY") ?: "bu_0zjrgu1oPJQav7GSJU4LhiL6vxggjdTvCpdrnhh4ppY") }
+            
             var testResult by remember { mutableStateOf("") }
             var isTesting by remember { mutableStateOf(false) }
+            var showConfigureKeys by remember { mutableStateOf(false) }
             val coroutineScope = rememberCoroutineScope()
 
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, NeonCyan.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-                    .background(TechPanel.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+                    .border(1.dp, NeonCyan.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+                    .background(TechPanel.copy(alpha = 0.65f), RoundedCornerShape(12.dp))
                     .padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = "CEYVIS API ANAHTARI VE GİRİŞ DIAGNOSTIĞI",
+                    text = "AKILLI API KONTROL VE YAPAY ZEKA MERKEZİ",
                     color = NeonCyan,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
@@ -950,56 +981,264 @@ fun JarvisHudView(
 
                 HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
 
+                // Active Engine Selection Layout
                 Text(
-                    text = "Eğer siber bağlantı kesiliyorsa veya HTTP 403 Forbidden hatası alıyorsanız, aşağıya kendi geçerli Gemini API anahtarınızı (AIzaSy...) enjekte edin sör.",
-                    color = SoftGrey,
+                    text = "AKTİF YAPAY ZEKA MOTORU: $activeEngine",
+                    color = Color.White,
                     fontSize = 10.sp,
-                    lineHeight = 14.sp
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
                 )
-
-                OutlinedTextField(
-                    value = keyInput,
-                    onValueChange = { newValue ->
-                        keyInput = newValue
-                        sharedPrefs.edit().putString("custom_api_key", newValue).apply()
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("api_key_input"),
-                    placeholder = { Text("AI Studio API Anahtarı girin (AIzaSy...)...", color = SoftGrey, fontSize = 11.sp) },
-                    textStyle = androidx.compose.ui.text.TextStyle(
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace
-                    ),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = NeonCyan,
-                        unfocusedBorderColor = NeonBlue.copy(alpha = 0.3f),
-                        unfocusedContainerColor = SpaceNavy.copy(alpha = 0.7f),
-                        focusedContainerColor = SpaceNavy.copy(alpha = 0.7f)
-                    ),
-                    shape = RoundedCornerShape(8.dp)
-                )
-
+                
                 Row(
                     modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    val engines = listOf(
+                        "GEMINI" to NeonCyan,
+                        "OPENAI" to SuccessGreen,
+                        "OPENROUTER" to TechViolet,
+                        "CLAUDE" to ErrorRed,
+                        "GROK" to Color(0xFFE2E2E2)
+                    )
+                    engines.forEach { (engine, eColor) ->
+                        val isSelected = activeEngine == engine
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (isSelected) eColor.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.03f))
+                                .border(1.dp, if (isSelected) eColor else Color.White.copy(alpha = 0.08f), RoundedCornerShape(6.dp))
+                                .clickable {
+                                    activeEngine = engine
+                                    sharedPrefs.edit().putString("active_ai_engine", engine).apply()
+                                    Toast.makeText(context, "$engine aktif yapay zeka motoru olarak seçildi.", Toast.LENGTH_SHORT).show()
+                                }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = engine,
+                                color = if (isSelected) eColor else SoftGrey,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
+
+                // Smart Key Detector Pool
+                Text(
+                    text = "AKILLI ANAHTAR ALGINAYICI (API DETECTOR)",
+                    color = NeonBlue,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                )
+                
+                OutlinedTextField(
+                    value = keyPasterInput,
+                    onValueChange = { valKey ->
+                        keyPasterInput = valKey.trim()
+                        if (valKey.isNotBlank()) {
+                            detectedEngine = com.example.network.JarvisBrain.detectApiKeyType(valKey)
+                        } else {
+                            detectedEngine = "Bilinmiyor"
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().testTag("api_key_input"),
+                    placeholder = { Text("Buraya herhangi bir API Key yapıştırın...", color = SoftGrey, fontSize = 10.sp) },
+                    textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = NeonBlue,
+                        unfocusedBorderColor = NeonBlue.copy(alpha = 0.2f),
+                        unfocusedContainerColor = SpaceNavy.copy(alpha = 0.5f),
+                        focusedContainerColor = SpaceNavy.copy(alpha = 0.5f)
+                    ),
+                    shape = RoundedCornerShape(6.dp)
+                )
+
+                if (keyPasterInput.isNotBlank()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Tespit Edilen Tür: $detectedEngine",
+                            color = if (detectedEngine != "UNKNOWN") SuccessGreen else ErrorRed,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        
+                        if (detectedEngine != "UNKNOWN") {
+                            Button(
+                                onClick = {
+                                    val keyToSave = keyPasterInput
+                                    when (detectedEngine) {
+                                        "GEMINI" -> {
+                                            geminiKey = keyToSave
+                                            sharedPrefs.edit().putString("custom_api_key", keyToSave).apply()
+                                        }
+                                        "OPENAI" -> {
+                                            openaiKey = keyToSave
+                                            sharedPrefs.edit().putString("openai_api_key", keyToSave).apply()
+                                        }
+                                        "OPENROUTER" -> {
+                                            openrouterKey = keyToSave
+                                            sharedPrefs.edit().putString("openrouter_api_key", keyToSave).apply()
+                                        }
+                                        "CLAUDE" -> {
+                                            claudeKey = keyToSave
+                                            sharedPrefs.edit().putString("claude_api_key", keyToSave).apply()
+                                        }
+                                        "GROK" -> {
+                                            grokKey = keyToSave
+                                            sharedPrefs.edit().putString("grok_api_key", keyToSave).apply()
+                                        }
+                                        "BROWSER_USE" -> {
+                                            browserUseKey = keyToSave
+                                            sharedPrefs.edit().putString("browser_use_api_key", keyToSave).apply()
+                                        }
+                                    }
+                                    Toast.makeText(context, "$detectedEngine anahtarı başarıyla kaydedildi sör!", Toast.LENGTH_SHORT).show()
+                                    keyPasterInput = ""
+                                    detectedEngine = "Bilinmiyor"
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen),
+                                contentPadding = PaddingValues(horizontal = 8.dp),
+                                shape = RoundedCornerShape(4.dp),
+                                modifier = Modifier.height(28.dp)
+                            ) {
+                                Text("Derhal Kaydet", color = SpaceNavy, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
+
+                // Configure Individual Keys Toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { showConfigureKeys = !showConfigureKeys },
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (keyInput.isBlank()) "Varsayılan Çekirdek Anahtarı Aktif" else "Özel Anahtar Enjekte Edildi",
-                        color = if (keyInput.isBlank()) TechViolet else SuccessGreen,
+                        text = "MANUEL ANAHTAR YAPILANDIRMASI " + (if (showConfigureKeys) "▲" else "▼"),
+                        color = SoftGrey,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
                     )
+                }
 
+                if (showConfigureKeys) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        // Gemini Field
+                        Column {
+                            Text("Google Gemini Key (AIzaSy...)", color = SoftGrey, fontSize = 9.sp)
+                            OutlinedTextField(
+                                value = geminiKey,
+                                onValueChange = { geminiKey = it; sharedPrefs.edit().putString("custom_api_key", it).apply() },
+                                modifier = Modifier.fillMaxWidth(),
+                                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace),
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = NeonCyan)
+                            )
+                        }
+
+                        // OpenAI Field
+                        Column {
+                            Text("OpenAI ChatGPT Key (sk-...)", color = SoftGrey, fontSize = 9.sp)
+                            OutlinedTextField(
+                                value = openaiKey,
+                                onValueChange = { openaiKey = it; sharedPrefs.edit().putString("openai_api_key", it).apply() },
+                                modifier = Modifier.fillMaxWidth(),
+                                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace),
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = SuccessGreen)
+                            )
+                        }
+
+                        // OpenRouter Field
+                        Column {
+                            Text("OpenRouter Key (sk-or-...)", color = SoftGrey, fontSize = 9.sp)
+                            OutlinedTextField(
+                                value = openrouterKey,
+                                onValueChange = { openrouterKey = it; sharedPrefs.edit().putString("openrouter_api_key", it).apply() },
+                                modifier = Modifier.fillMaxWidth(),
+                                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace),
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TechViolet)
+                            )
+                        }
+
+                        // Anthropic Claude Field
+                        Column {
+                            Text("Anthropic Claude Key (sk-ant-...)", color = SoftGrey, fontSize = 9.sp)
+                            OutlinedTextField(
+                                value = claudeKey,
+                                onValueChange = { claudeKey = it; sharedPrefs.edit().putString("claude_api_key", it).apply() },
+                                modifier = Modifier.fillMaxWidth(),
+                                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace),
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = ErrorRed)
+                            )
+                        }
+
+                        // xAI Grok Field
+                        Column {
+                            Text("xAI Grok Key (xai-...)", color = SoftGrey, fontSize = 9.sp)
+                            OutlinedTextField(
+                                value = grokKey,
+                                onValueChange = { grokKey = it; sharedPrefs.edit().putString("grok_api_key", it).apply() },
+                                modifier = Modifier.fillMaxWidth(),
+                                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace),
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color.White)
+                            )
+                        }
+
+                        // Browser Use Cloud Field
+                        Column {
+                            Text("Browser Use Cloud Key (bu_...)", color = SoftGrey, fontSize = 9.sp)
+                            OutlinedTextField(
+                                value = browserUseKey,
+                                onValueChange = { browserUseKey = it; sharedPrefs.edit().putString("browser_use_api_key", it).apply() },
+                                modifier = Modifier.fillMaxWidth(),
+                                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace),
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = NeonCyan)
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
                     Button(
                         onClick = {
                             isTesting = true
-                            testResult = "Bağlantı tüneli sorgulanıyor..."
+                            testResult = "İlgili yapay zeka tüneli sorgulanıyor sör..."
                             coroutineScope.launch {
-                                val result = com.example.network.JarvisBrain.testConnection(context, keyInput)
+                                val activeKeyInField = when(activeEngine) {
+                                    "GEMINI" -> geminiKey
+                                    "OPENAI" -> openaiKey
+                                    "OPENROUTER" -> openrouterKey
+                                    "CLAUDE" -> claudeKey
+                                    "GROK" -> grokKey
+                                    else -> ""
+                                }
+                                val result = com.example.network.JarvisBrain.testConnection(context, activeKeyInField)
                                 testResult = result
                                 isTesting = false
                             }
@@ -1011,7 +1250,7 @@ fun JarvisHudView(
                         modifier = Modifier.height(32.dp)
                     ) {
                         Text(
-                            text = if (isTesting) "Sorgulanıyor..." else "Bağlantıyı Test Et",
+                            text = if (isTesting) "Kontrol Ediliyor..." else "Bağlantıyı Test Et ($activeEngine)",
                             color = SpaceNavy,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold
@@ -1819,6 +2058,490 @@ fun JarvisLogsView(viewModel: JarvisViewModel) {
                         color = SoftGrey,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Normal
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun JarvisBrowserUseView(viewModel: JarvisViewModel) {
+    val logs by viewModel.browserUseLogs.collectAsStateWithLifecycle()
+    val currentUrl by viewModel.browserUseCurrentUrl.collectAsStateWithLifecycle()
+    val screenshotName by viewModel.browserUseScreenshotName.collectAsStateWithLifecycle()
+    val activeTask by viewModel.browserUseActiveTask.collectAsStateWithLifecycle()
+    val isRunning by viewModel.isBrowserUseRunning.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+
+    val sharedPrefs = context.getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE)
+    var browserUseKey by remember { mutableStateOf(sharedPrefs.getString("browser_use_api_key", "bu_0zjrgu1oPJQav7GSJU4LhiL6vxggjdTvCpdrnhh4ppY") ?: "bu_0zjrgu1oPJQav7GSJU4LhiL6vxggjdTvCpdrnhh4ppY") }
+    var taskInput by remember { mutableStateOf("") }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp)
+    ) {
+        item {
+            Column {
+                Text(
+                    text = "BROWSER USE CLOUD KONTROL",
+                    color = NeonCyan,
+                    fontSize = 14.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Bulut üzerinde gerçek zamanlı otomasyon ve tarayıcı sürüş merkezi.",
+                    color = SoftGrey,
+                    fontSize = 11.sp
+                )
+            }
+        }
+
+        // 1. Browser Use API Key config slot
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, NeonCyan.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+                    .background(TechPanel.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "BULUT CRITICAL API KEY YAPILANDIRMASI",
+                    color = NeonCyan,
+                    fontSize = 9.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold
+                )
+                
+                OutlinedTextField(
+                    value = browserUseKey,
+                    onValueChange = { newValue ->
+                        browserUseKey = newValue
+                        sharedPrefs.edit().putString("browser_use_api_key", newValue).apply()
+                    },
+                    modifier = Modifier.fillMaxWidth().testTag("browser_use_key_field"),
+                    placeholder = { Text("Browser Use Cloud Key (bu_...)...", color = SoftGrey, fontSize = 11.sp) },
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace
+                    ),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = NeonCyan,
+                        unfocusedBorderColor = NeonBlue.copy(alpha = 0.2f),
+                        unfocusedContainerColor = SpaceNavy,
+                        focusedContainerColor = SpaceNavy
+                    ),
+                    shape = RoundedCornerShape(6.dp)
+                )
+                Text(
+                    text = "Bulut tarayıcınızı yönetmek için API anahtarını anında değiştirip kaydedebilirsiniz sör.",
+                    color = SoftGrey.copy(alpha = 0.7f),
+                    fontSize = 9.sp
+                )
+            }
+        }
+
+        // 2. Browser Simulator Live Display Console
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, NeonBlue.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                    .background(SpaceNavy, RoundedCornerShape(12.dp))
+            ) {
+                // Top header representing Chrome UI
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF1E2022))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Traffic lights icons
+                    Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(ErrorRed))
+                    Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(Color(0xFFF59E0B)))
+                    Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(SuccessGreen))
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    // Address Pill
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color(0xFF2C2E31))
+                            .border(width = 0.5.dp, color = Color.White.copy(alpha = 0.08f), shape = RoundedCornerShape(14.dp))
+                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "Secure Connection",
+                                tint = SuccessGreen,
+                                modifier = Modifier.size(10.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = currentUrl,
+                                color = SoftGrey,
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .background(if (isRunning) NeonCyan.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.05f))
+                            .clickable { },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Reload",
+                            tint = if (isRunning) NeonCyan else SoftGrey,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
+
+                // Main simulated visual rendering of the page
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp)
+                        .background(Color(0xFF141517))
+                        .padding(14.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    when (screenshotName) {
+                        "empty" -> {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    imageVector = Icons.Default.Language,
+                                    contentDescription = "Cloud Browser",
+                                    tint = SoftGrey.copy(alpha = 0.3f),
+                                    modifier = Modifier.size(40.dp)
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text(
+                                    text = "BULUT TARAYICI BAĞLANTISI YOK",
+                                    color = SoftGrey.copy(alpha = 0.8f),
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Yukarıdan görev tetikleyerek oturumu canlandırın.",
+                                    color = SoftGrey.copy(alpha = 0.5f),
+                                    fontSize = 9.sp
+                                )
+                            }
+                        }
+                        "google_page" -> {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                Text(
+                                    text = "G o o g l e",
+                                    fontSize = 28.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .width(220.dp)
+                                        .height(24.dp)
+                                        .border(0.5.dp, SoftGrey.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                                        .background(Color(0xFF2C2E31))
+                                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Text(text = activeTask, color = Color.White, fontSize = 9.sp)
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Box(modifier = Modifier.background(Color(0xFF202124), RoundedCornerShape(4.dp)).padding(horizontal = 8.dp, vertical = 4.dp)) {
+                                        Text("Google'da Ara", color = SoftGrey, fontSize = 8.sp)
+                                    }
+                                }
+                            }
+                        }
+                        "google_results" -> {
+                            Column(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text("Arama Sonuçları: \"$activeTask\"", color = SoftGrey, fontSize = 9.sp)
+                                repeat(3) { index ->
+                                    Column(modifier = Modifier.fillMaxWidth()) {
+                                        Text(
+                                            text = "Grup $index: Sanal robot aramalarını inceliyor sör.",
+                                            color = NeonCyan,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "Saniyeler içinde veriler parse edilecektir... AI bulut tüneli.",
+                                            color = SoftGrey,
+                                            fontSize = 9.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        "target_site" -> {
+                            Column(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Sayfa İçeriği Taranıyor", color = SuccessGreen, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    Box(modifier = Modifier.background(SuccessGreen.copy(0.2f)).padding(horizontal = 4.dp, vertical = 2.dp)) {
+                                        Text("VERİ SEKTÖRÜ", color = SuccessGreen, fontSize = 8.sp)
+                                    }
+                                }
+                                Text(
+                                    text = "Bulunulan Adres: $currentUrl",
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Text(
+                                    text = "Tarayıcı robotumuz ($browserUseKey) üzerinden tüm link ve yazıları analiz ederek hafızaya çekiyor.",
+                                    color = SoftGrey,
+                                    fontSize = 9.sp,
+                                    lineHeight = 13.sp
+                                )
+                            }
+                        }
+                        "task_done" -> {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(CircleShape)
+                                        .background(SuccessGreen.copy(alpha = 0.15f))
+                                        .border(1.dp, SuccessGreen, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(imageVector = Icons.Default.Check, contentDescription = "Done", tint = SuccessGreen)
+                                }
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text(
+                                    text = "BULUT OTOMASYONU BAŞARIYLA TAMAMLANDI!",
+                                    color = SuccessGreen,
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Özet bilgi sistem beynine enjekte edildi sör.",
+                                    color = SoftGrey,
+                                    fontSize = 9.sp
+                                )
+                            }
+                        }
+                        else -> {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text("Arayüz canlanıyor...", color = NeonCyan)
+                            }
+                        }
+                    }
+                }
+
+                // Interactive Bottom Action Strip inside simulator
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF1E2022))
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Button(
+                        onClick = { viewModel.manualBrowserUseClick() },
+                        enabled = isRunning,
+                        colors = ButtonDefaults.buttonColors(containerColor = TechViolet.copy(alpha = 0.2f), contentColor = TechViolet),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Text("Manuel Click", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = { viewModel.manualBrowserUseScroll() },
+                        enabled = isRunning,
+                        colors = ButtonDefaults.buttonColors(containerColor = TechViolet.copy(alpha = 0.2f), contentColor = TechViolet),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Text("Aşağı Kaydır", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Spacer(modifier = Modifier.weight(1f))
+
+                    if (isRunning) {
+                        Button(
+                            onClick = { viewModel.stopBrowserUseTask() },
+                            colors = ButtonDefaults.buttonColors(containerColor = ErrorRed.copy(alpha = 0.2f), contentColor = ErrorRed),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Text("Durdur", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Command dispatcher field
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, NeonBlue.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                    .background(TechPanel.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "GÖREV ENJEKSİYONU",
+                    color = NeonBlue,
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold
+                )
+
+                OutlinedTextField(
+                    value = taskInput,
+                    onValueChange = { taskInput = it },
+                    modifier = Modifier.fillMaxWidth().testTag("browser_use_query_input"),
+                    placeholder = { Text("Bulutta yapmasını istediğiniz işlemi yazın...", color = SoftGrey, fontSize = 11.sp) },
+                    textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 12.sp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = NeonCyan,
+                        unfocusedBorderColor = SoftGrey.copy(alpha = 0.3f)
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                )
+
+                Button(
+                    onClick = {
+                        if (taskInput.isNotBlank()) {
+                            viewModel.startBrowserUseCloudTask(taskInput, context)
+                            taskInput = ""
+                        } else {
+                            Toast.makeText(context, "Lütfen bir görev yazın sör.", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(36.dp).testTag("browser_use_submit"),
+                    colors = ButtonDefaults.buttonColors(containerColor = NeonCyan, contentColor = SpaceNavy),
+                    shape = RoundedCornerShape(8.dp),
+                    enabled = !isRunning
+                ) {
+                    Text(
+                        text = if (isRunning) "Görev Sürdürülüyor..." else "Bulut Görevini Başlat",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+        }
+
+        // 4. Live Log Term stream
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "İŞLEM LOG YAYINI (${logs.size} log)",
+                    color = SoftGrey,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Button(
+                    onClick = { viewModel.clearBrowserUseLogs() },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = ErrorRed.copy(alpha = 0.15f),
+                        contentColor = ErrorRed
+                    ),
+                    modifier = Modifier.height(26.dp).testTag("browser_use_clear"),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                ) {
+                    Text("Temizle", fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                }
+            }
+        }
+
+        if (logs.isEmpty()) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(100.dp)
+                        .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+                        .background(TechPanel.copy(alpha = 0.2f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Aktif işlem günlüğü henüz mevcut değil sör.",
+                        color = SoftGrey.copy(alpha = 0.5f),
+                        fontSize = 11.sp
+                    )
+                }
+            }
+        } else {
+            items(logs) { logLine ->
+                val logColor = when {
+                    logLine.contains("[HATA]") -> ErrorRed
+                    logLine.contains("[TAMAMLANDI]") -> SuccessGreen
+                    logLine.contains("[SİSTEM]") -> TechViolet
+                    logLine.contains("[ETKİLEŞİM]") -> NeonCyan
+                    logLine.contains("[TARAYICI]") -> NeonBlue
+                    else -> SoftGrey
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(0.5.dp, logColor.copy(alpha = 0.2f), RoundedCornerShape(6.dp))
+                        .background(Color(0xFF0F1113), RoundedCornerShape(6.dp))
+                        .padding(8.dp)
+                ) {
+                    Text(
+                        text = logLine,
+                        color = logColor,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        lineHeight = 14.sp
                     )
                 }
             }
