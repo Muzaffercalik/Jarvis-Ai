@@ -11,6 +11,7 @@ import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import retrofit2.http.Body
 import retrofit2.http.POST
+import retrofit2.http.Path
 import retrofit2.http.Query
 import java.util.concurrent.TimeUnit
 
@@ -87,8 +88,9 @@ data class JarvisIntentResponse(
 )
 
 interface GeminiApiService {
-    @POST("v1beta/models/gemini-3.5-flash:generateContent")
+    @POST("v1beta/models/{model}:generateContent")
     suspend fun generateContent(
+        @Path("model") model: String,
         @Query("key") apiKey: String,
         @Body request: GenerateContentRequest
     ): GenerateContentResponse
@@ -181,26 +183,35 @@ object JarvisBrain {
             )
         )
 
-        return try {
-            val response = RetrofitClient.service.generateContent(apiKey, requestBody)
-            val jsonText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-            if (jsonText != null) {
-                RetrofitClient.jsonParser.adapter(JarvisIntentResponse::class.java).fromJson(jsonText)
-                    ?: JarvisIntentResponse(
-                        explanation = "Üzgünüm sör, komutu ayrıştırırken bir hata oluştu: Boş yanıt.",
-                        intent = "SPEAK_ONLY"
-                    )
-            } else {
-                JarvisIntentResponse(
-                    explanation = "Anlaşılamadı sör. Komutu tekrar edebilir misiniz?",
-                    intent = "SPEAK_ONLY"
-                )
+        val modelsToTry = listOf(
+            "gemini-1.5-flash",
+            "gemini-1.5-pro",
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-3.5-flash"
+        )
+        
+        var lastException: Exception? = null
+        
+        for (model in modelsToTry) {
+            try {
+                val response = RetrofitClient.service.generateContent(model, apiKey, requestBody)
+                val jsonText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+                if (jsonText != null) {
+                    val parsed = RetrofitClient.jsonParser.adapter(JarvisIntentResponse::class.java).fromJson(jsonText)
+                    if (parsed != null) {
+                        return parsed
+                    }
+                }
+            } catch (e: Exception) {
+                lastException = e
             }
-        } catch (e: Exception) {
-            JarvisIntentResponse(
-                explanation = "Bağlantıda bir aksama oldu sör. Detay: ${e.localizedMessage}",
-                intent = "SPEAK_ONLY"
-            )
         }
+        
+        val errMsg = lastException?.localizedMessage ?: "Bilinmeyen Hata"
+        return JarvisIntentResponse(
+            explanation = "Bağlantıda bir aksama oldu sör. Detay: $errMsg",
+            intent = "SPEAK_ONLY"
+        )
     }
 }
