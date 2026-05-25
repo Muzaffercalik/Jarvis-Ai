@@ -49,55 +49,68 @@ class JarvisAccessibilityService : AccessibilityService() {
         }
         
         fun clickByText(text: String): Boolean {
-            val service = instance ?: return false
-            val rootNode = service.rootInActiveWindow ?: return false
-            return findAndClickNodeByText(rootNode, text)
+            try {
+                val service = instance ?: return false
+                val rootNode = service.rootInActiveWindow ?: return false
+                return findAndClickNodeByText(rootNode, text)
+            } catch (t: Throwable) {
+                Log.e("Accessibility", "Error clicking by text: ${t.message}")
+            }
+            return false
         }
 
         private fun findAndClickNodeByText(node: AccessibilityNodeInfo, text: String): Boolean {
-            val contentDesc = node.contentDescription?.toString() ?: ""
-            val nodeText = node.text?.toString() ?: ""
-            if (nodeText.contains(text, ignoreCase = true) || contentDesc.contains(text, ignoreCase = true)) {
-                // Get visual bounds on the physical screen
-                val rect = android.graphics.Rect()
-                node.getBoundsInScreen(rect)
-                if (rect.centerX() > 0 && rect.centerY() > 0) {
-                    // Try coordinates-based click which is 100% reliable for custom apps (YouTube, browser, etc.)
-                    val coordinateClicked = clickAtCoordinates(rect.centerX().toFloat(), rect.centerY().toFloat())
-                    if (coordinateClicked) return true
-                }
-
-                // Fallback 1: Click directly on the node
-                if (node.isClickable) {
-                    val clicked = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                    if (clicked) return true
-                }
-
-                // Fallback 2: Traverse up parents to click clickable wrappers
-                var parent = node.parent
-                var depth = 0
-                while (parent != null && depth < 5) {
-                    val parentRect = android.graphics.Rect()
-                    parent.getBoundsInScreen(parentRect)
-                    if (parentRect.centerX() > 0 && parentRect.centerY() > 0) {
-                        val parentCoordClicked = clickAtCoordinates(parentRect.centerX().toFloat(), parentRect.centerY().toFloat())
-                        if (parentCoordClicked) return true
+            try {
+                val contentDesc = node.contentDescription?.toString() ?: ""
+                val nodeText = node.text?.toString() ?: ""
+                if (nodeText.contains(text, ignoreCase = true) || contentDesc.contains(text, ignoreCase = true)) {
+                    // Get visual bounds on the physical screen
+                    val rect = android.graphics.Rect()
+                    node.getBoundsInScreen(rect)
+                    if (rect.centerX() > 0 && rect.centerY() > 0) {
+                        // Try coordinates-based click which is 100% reliable for custom apps (YouTube, browser, etc.)
+                        val coordinateClicked = clickAtCoordinates(rect.centerX().toFloat(), rect.centerY().toFloat())
+                        if (coordinateClicked) return true
                     }
-                    if (parent.isClickable) {
-                        val clicked = parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+
+                    // Fallback 1: Click directly on the node
+                    if (node.isClickable) {
+                        val clicked = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                         if (clicked) return true
                     }
-                    parent = parent.parent
-                    depth++
+
+                    // Fallback 1.5: Traverse up parents to click clickable wrappers safely
+                    var parent = try { node.parent } catch (e: Exception) { null }
+                    var depth = 0
+                    while (parent != null && depth < 5) {
+                        try {
+                            val parentRect = android.graphics.Rect()
+                            parent.getBoundsInScreen(parentRect)
+                            if (parentRect.centerX() > 0 && parentRect.centerY() > 0) {
+                                val parentCoordClicked = clickAtCoordinates(parentRect.centerX().toFloat(), parentRect.centerY().toFloat())
+                                if (parentCoordClicked) return true
+                            }
+                            if (parent.isClickable) {
+                                val clicked = parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                                if (clicked) return true
+                            }
+                            parent = parent.parent
+                        } catch (e: Exception) {
+                            parent = null
+                        }
+                        depth++
+                    }
                 }
-            }
-            val count = node.childCount
-            for (i in 0 until count) {
-                val child = node.getChild(i)
-                if (child != null) {
-                    val clicked = findAndClickNodeByText(child, text)
-                    if (clicked) return true
+                val count = node.childCount
+                for (i in 0 until count) {
+                    val child = try { node.getChild(i) } catch (e: Exception) { null }
+                    if (child != null) {
+                        val clicked = findAndClickNodeByText(child, text)
+                        if (clicked) return true
+                    }
                 }
+            } catch (t: Throwable) {
+                Log.e("Accessibility", "Error during findAndClickNodeByText: ${t.message}")
             }
             return false
         }
@@ -123,138 +136,184 @@ class JarvisAccessibilityService : AccessibilityService() {
         }
 
         fun longClickByText(text: String): Boolean {
-            val service = instance ?: return false
-            val rootNode = service.rootInActiveWindow ?: return false
-            return findAndLongClickNodeByText(rootNode, text)
+            try {
+                val service = instance ?: return false
+                val rootNode = service.rootInActiveWindow ?: return false
+                return findAndLongClickNodeByText(rootNode, text)
+            } catch (t: Throwable) {
+                Log.e("Accessibility", "Error long clicking by text: ${t.message}")
+            }
+            return false
         }
 
         private fun findAndLongClickNodeByText(node: AccessibilityNodeInfo, text: String): Boolean {
-            val contentDesc = node.contentDescription?.toString() ?: ""
-            val nodeText = node.text?.toString() ?: ""
-            if (nodeText.contains(text, ignoreCase = true) || contentDesc.contains(text, ignoreCase = true)) {
-                val rect = android.graphics.Rect()
-                node.getBoundsInScreen(rect)
-                if (rect.centerX() > 0 && rect.centerY() > 0) {
-                    val coordinateClicked = longClickAtCoordinates(rect.centerX().toFloat(), rect.centerY().toFloat())
-                    if (coordinateClicked) return true
+            try {
+                val contentDesc = node.contentDescription?.toString() ?: ""
+                val nodeText = node.text?.toString() ?: ""
+                if (nodeText.contains(text, ignoreCase = true) || contentDesc.contains(text, ignoreCase = true)) {
+                    val rect = android.graphics.Rect()
+                    node.getBoundsInScreen(rect)
+                    if (rect.centerX() > 0 && rect.centerY() > 0) {
+                        val coordinateClicked = longClickAtCoordinates(rect.centerX().toFloat(), rect.centerY().toFloat())
+                        if (coordinateClicked) return true
+                    }
+                    if (node.isClickable) {
+                        val clicked = node.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK)
+                        if (clicked) return true
+                    }
                 }
-                if (node.isClickable) {
-                    val clicked = node.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK)
-                    if (clicked) return true
+                val count = node.childCount
+                for (i in 0 until count) {
+                    val child = try { node.getChild(i) } catch (e: Exception) { null }
+                    if (child != null) {
+                        val clicked = findAndLongClickNodeByText(child, text)
+                        if (clicked) return true
+                    }
                 }
-            }
-            val count = node.childCount
-            for (i in 0 until count) {
-                val child = node.getChild(i)
-                if (child != null) {
-                    val clicked = findAndLongClickNodeByText(child, text)
-                    if (clicked) return true
-                }
+            } catch (t: Throwable) {
+                Log.e("Accessibility", "Error in findAndLongClickNodeByText: ${t.message}")
             }
             return false
         }
 
         fun inputTextByText(targetText: String, textToInject: String): Boolean {
-            val service = instance ?: return false
-            val rootNode = service.rootInActiveWindow ?: return false
-            return findAndSetTextOnNode(rootNode, targetText, textToInject)
+            try {
+                val service = instance ?: return false
+                val rootNode = service.rootInActiveWindow ?: return false
+                return findAndSetTextOnNode(rootNode, targetText, textToInject)
+            } catch (t: Throwable) {
+                Log.e("Accessibility", "Error inputting text: ${t.message}")
+            }
+            return false
         }
 
         private fun findAndSetTextOnNode(node: AccessibilityNodeInfo, targetText: String, textToInject: String): Boolean {
-            val contentDesc = node.contentDescription?.toString() ?: ""
-            val nodeText = node.text?.toString() ?: ""
-            if (nodeText.contains(targetText, ignoreCase = true) || contentDesc.contains(targetText, ignoreCase = true)) {
-                if (node.isEditable) {
-                    val arguments = android.os.Bundle()
-                    arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, textToInject)
-                    val set = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-                    if (set) return true
+            try {
+                val contentDesc = node.contentDescription?.toString() ?: ""
+                val nodeText = node.text?.toString() ?: ""
+                if (nodeText.contains(targetText, ignoreCase = true) || contentDesc.contains(targetText, ignoreCase = true)) {
+                    if (node.isEditable) {
+                        val arguments = android.os.Bundle()
+                        arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, textToInject)
+                        val set = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+                        if (set) return true
+                    }
                 }
-            }
-            val count = node.childCount
-            for (i in 0 until count) {
-                val child = node.getChild(i)
-                if (child != null) {
-                    val set = findAndSetTextOnNode(child, targetText, textToInject)
-                    if (set) return true
+                val count = node.childCount
+                for (i in 0 until count) {
+                    val child = try { node.getChild(i) } catch (e: Exception) { null }
+                    if (child != null) {
+                        val set = findAndSetTextOnNode(child, targetText, textToInject)
+                        if (set) return true
+                    }
                 }
+            } catch (t: Throwable) {
+                Log.e("Accessibility", "Error in findAndSetTextOnNode: ${t.message}")
             }
             return false
         }
 
         fun typeIntoFocusedNode(textToInject: String): Boolean {
-            val service = instance ?: return false
-            val rootNode = service.rootInActiveWindow ?: return false
-            return findAndSetTextOnFocusedNode(rootNode, textToInject)
+            try {
+                val service = instance ?: return false
+                val rootNode = service.rootInActiveWindow ?: return false
+                return findAndSetTextOnFocusedNode(rootNode, textToInject)
+            } catch (t: Throwable) {
+                Log.e("Accessibility", "Error typing into focused: ${t.message}")
+            }
+            return false
         }
 
         private fun findAndSetTextOnFocusedNode(node: AccessibilityNodeInfo, textToInject: String): Boolean {
-            if (node.isFocused && node.isEditable) {
-                val arguments = android.os.Bundle()
-                arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, textToInject)
-                val set = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-                if (set) return true
-            }
-            val count = node.childCount
-            for (i in 0 until count) {
-                val child = node.getChild(i)
-                if (child != null) {
-                    val set = findAndSetTextOnFocusedNode(child, textToInject)
+            try {
+                if (node.isFocused && node.isEditable) {
+                    val arguments = android.os.Bundle()
+                    arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, textToInject)
+                    val set = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
                     if (set) return true
                 }
+                val count = node.childCount
+                for (i in 0 until count) {
+                    val child = try { node.getChild(i) } catch (e: Exception) { null }
+                    if (child != null) {
+                        val set = findAndSetTextOnFocusedNode(child, textToInject)
+                        if (set) return true
+                    }
+                }
+            } catch (t: Throwable) {
+                Log.e("Accessibility", "Error in findAndSetTextOnFocusedNode: ${t.message}")
             }
             return false
         }
 
         fun swipe(fromX: Float, fromY: Float, toX: Float, toY: Float, duration: Long = 300): Boolean {
-            val service = instance ?: return false
-            val builder = GestureDescription.Builder()
-            val path = Path().apply {
-                moveTo(fromX, fromY)
-                lineTo(toX, toY)
+            try {
+                val service = instance ?: return false
+                val builder = GestureDescription.Builder()
+                val path = Path().apply {
+                    moveTo(fromX, fromY)
+                    lineTo(toX, toY)
+                }
+                builder.addStroke(GestureDescription.StrokeDescription(path, 0, duration))
+                return service.dispatchGesture(builder.build(), null, null)
+            } catch (t: Throwable) {
+                Log.e("Accessibility", "Error in swipe: ${t.message}")
             }
-            builder.addStroke(GestureDescription.StrokeDescription(path, 0, duration))
-            return service.dispatchGesture(builder.build(), null, null)
+            return false
         }
 
         fun swipeByName(direction: String, duration: Long = 300): Boolean {
-            val service = instance ?: return false
-            val metrics = service.resources.displayMetrics
-            val w = metrics.widthPixels.toFloat()
-            val h = metrics.heightPixels.toFloat()
-            
-            return when (direction.uppercase()) {
-                "DOWN" -> swipe(w / 2f, h * 0.3f, w / 2f, h * 0.8f, duration)
-                "UP" -> swipe(w / 2f, h * 0.8f, w / 2f, h * 0.3f, duration)
-                "LEFT" -> swipe(w * 0.8f, h / 2f, w * 0.2f, h / 2f, duration)
-                "RIGHT" -> swipe(w * 0.2f, h / 2f, w * 0.8f, h / 2f, duration)
-                else -> false
+            try {
+                val service = instance ?: return false
+                val metrics = service.resources.displayMetrics
+                val w = metrics.widthPixels.toFloat()
+                val h = metrics.heightPixels.toFloat()
+                
+                return when (direction.uppercase()) {
+                    "DOWN" -> swipe(w / 2f, h * 0.3f, w / 2f, h * 0.8f, duration)
+                    "UP" -> swipe(w / 2f, h * 0.8f, w / 2f, h * 0.3f, duration)
+                    "LEFT" -> swipe(w * 0.8f, h / 2f, w * 0.2f, h / 2f, duration)
+                    "RIGHT" -> swipe(w * 0.2f, h / 2f, w * 0.8f, h / 2f, duration)
+                    else -> false
+                }
+            } catch (t: Throwable) {
+                Log.e("Accessibility", "Error in swipeByName: ${t.message}")
             }
+            return false
         }
 
         fun getVisibleScreenTexts(): List<String> {
-            val service = instance ?: return emptyList()
-            val rootNode = service.rootInActiveWindow ?: return emptyList()
-            val texts = mutableListOf<String>()
-            extractTextsFromNode(rootNode, texts)
-            return texts.distinct()
+            try {
+                val service = instance ?: return emptyList()
+                val rootNode = service.rootInActiveWindow ?: return emptyList()
+                val texts = mutableListOf<String>()
+                extractTextsFromNode(rootNode, texts)
+                return texts.distinct()
+            } catch (t: Throwable) {
+                Log.e("Accessibility", "Error in getVisibleScreenTexts: ${t.message}")
+            }
+            return emptyList()
         }
 
         private fun extractTextsFromNode(node: AccessibilityNodeInfo, list: MutableList<String>) {
-            val text = node.text?.toString()?.trim() ?: ""
-            val desc = node.contentDescription?.toString()?.trim() ?: ""
-            if (text.isNotEmpty() && text.length < 150) {
-                list.add(text)
-            }
-            if (desc.isNotEmpty() && desc.length < 150) {
-                list.add(desc)
-            }
-            val count = node.childCount
-            for (i in 0 until count) {
-                val child = node.getChild(i)
-                if (child != null) {
-                    extractTextsFromNode(child, list)
+            try {
+                val text = try { node.text?.toString()?.trim() ?: "" } catch (e: Exception) { "" }
+                val desc = try { node.contentDescription?.toString()?.trim() ?: "" } catch (e: Exception) { "" }
+                if (text.isNotEmpty() && text.length < 150) {
+                    list.add(text)
                 }
+                if (desc.isNotEmpty() && desc.length < 150) {
+                    list.add(desc)
+                }
+                val count = try { node.childCount } catch (e: Exception) { 0 }
+                for (i in 0 until count) {
+                    val child = try { node.getChild(i) } catch (e: Exception) { null }
+                    if (child != null) {
+                        extractTextsFromNode(child, list)
+                    }
+                }
+            } catch (t: Throwable) {
+                Log.e("Accessibility", "Error in extractTextsFromNode: ${t.message}")
             }
         }
 

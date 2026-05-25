@@ -263,11 +263,17 @@ object JarvisBrain {
         try {
             when (activeEngine.uppercase()) {
                 "GEMINI" -> {
-                    val customKey = sharedPrefs.getString("custom_api_key", null)
-                    val apiKey = if (!customKey.isNullOrBlank()) customKey.trim() else BuildConfig.GEMINI_API_KEY
-                    if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
+                    val customKey = sharedPrefs.getString("custom_api_key", null)?.trim()
+                    val isValidCustomKey = !customKey.isNullOrBlank() && 
+                            customKey != "AIzaSyA2j_H4g2JwzKgN9tbXMQH3Apl6Cks0nks" && 
+                            !customKey.contains("random") &&
+                            customKey.length > 25 &&
+                            !customKey.endsWith("...")
+                    
+                    val apiKey = if (isValidCustomKey) customKey!! else BuildConfig.GEMINI_API_KEY
+                    if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY" || apiKey == "AIzaSyA2j_H4g2JwzKgN9tbXMQH3Apl6Cks0nks") {
                         return JarvisIntentResponse(
-                            explanation = "Lütfen AI Studio Secrets panelinden veya aşağıdaki panelden geçerli bir GEMINI_API_KEY tanımlayın, sör.",
+                            explanation = "Lütfen AI Studio Secrets panelinden geçerli bir GEMINI_API_KEY tanımlayın veya ayarlardan kendi geçerli anahtarınızı ekleyin sör.",
                             intent = "SPEAK_ONLY"
                         )
                     }
@@ -278,7 +284,7 @@ object JarvisBrain {
                         systemInstruction = SystemInstruction(parts = listOf(Part(text = SYSTEM_PROMPT)))
                     )
 
-                    val modelsToTry = listOf("gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-3.5-flash")
+                    val modelsToTry = listOf("gemini-1.5-flash", "gemini-2.0-flash", "gemini-2.5-flash")
                     var lastEx: Exception? = null
                     for (model in modelsToTry) {
                         try {
@@ -412,8 +418,31 @@ object JarvisBrain {
                 }
             }
         } catch (e: Exception) {
+            val message = e.localizedMessage ?: ""
+            var code = 0
+            
+            // Introspect nested exception links for Retrofit HTTP status codes
+            var currentEx: Throwable? = e
+            while (currentEx != null) {
+                if (currentEx is retrofit2.HttpException) {
+                    code = currentEx.code()
+                    break
+                }
+                currentEx = currentEx.cause
+            }
+            
+            val userFriendlyExplanation = when {
+                code == 429 || message.contains("429") -> 
+                    "Sör, çok fazla üst üste istek gönderildiğinden Gemini API limiti geçici olarak aşıldı (HTTP 429 Quota Exceeded). Lütfen asistanı kapatıp birkaç saniye bekleyin ve tekrar deneyin sör."
+                code == 400 || message.contains("400") -> 
+                    "Sör, sunucu isteği kabul etmedi (HTTP 400 Bad Request). Bunun sebebi seçilen modelin şuan devredışı olması veya hatalı/geçersiz bir API anahtarı girilmesi olabilir. Lütfen ayarlardan API anahtarınızı temizlemeyi veya kontrol etmeyi deneyin sör."
+                code == 403 || message.contains("403") || message.contains("API_KEY_INVALID") -> 
+                    "Sör, API yetkilendirme hatası (HTTP 403 / Geçersiz Anahtar). Lütfen girdiğiniz API anahtarının doğruluğunu kontrol edin veya temizleyerek varsayılan tüneli kullanın sör."
+                else -> 
+                    "Bağlantıda bir aksama oldu sör. Detay: HTTP ${if (code > 0) code else "Hata"} - $message"
+            }
             return JarvisIntentResponse(
-                explanation = "Bağlantıda bir aksama oldu sör. Detay: ${e.localizedMessage}",
+                explanation = userFriendlyExplanation,
                 intent = "SPEAK_ONLY"
             )
         }
@@ -427,16 +456,22 @@ object JarvisBrain {
         try {
             when (activeEngine.uppercase()) {
                 "GEMINI" -> {
-                    val fallbackKey = sharedPrefs.getString("custom_api_key", null)
-                    val key = trimmedKey.ifBlank { if (!fallbackKey.isNullOrBlank()) fallbackKey.trim() else BuildConfig.GEMINI_API_KEY }
-                    if (key.isEmpty() || key == "MY_GEMINI_API_KEY") return "API anahtarı tanımlanmamış sör."
+                    val fallbackKey = sharedPrefs.getString("custom_api_key", null)?.trim()
+                    val isValidCustomKey = !fallbackKey.isNullOrBlank() && 
+                            fallbackKey != "AIzaSyA2j_H4g2JwzKgN9tbXMQH3Apl6Cks0nks" && 
+                            !fallbackKey.contains("random") &&
+                            fallbackKey.length > 25 &&
+                            !fallbackKey.endsWith("...")
+                    
+                    val key = trimmedKey.ifBlank { if (isValidCustomKey) fallbackKey!! else BuildConfig.GEMINI_API_KEY }
+                    if (key.isEmpty() || key == "MY_GEMINI_API_KEY" || key == "AIzaSyA2j_H4g2JwzKgN9tbXMQH3Apl6Cks0nks") return "API anahtarı tanımlanmamış sör."
 
                     val requestBody = GenerateContentRequest(
                         contents = listOf(Content(parts = listOf(Part(text = "Hello! respond with exactly one word: Success")))),
                         generationConfig = GenerationConfig(temperature = 0.2)
                     )
 
-                    val response = RetrofitClient.service.generateContent("gemini-2.5-flash", key, requestBody)
+                    val response = RetrofitClient.service.generateContent("gemini-1.5-flash", key, requestBody)
                     val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
                     return if (!text.isNullOrBlank()) "BAŞARILI! (Google Gemini tüneli aktif sör.)" else "Başarısız boş yanıt sör."
                 }

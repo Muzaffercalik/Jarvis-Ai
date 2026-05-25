@@ -118,7 +118,7 @@ class JarvisViewModel(private val repository: JarvisRepository) : ViewModel() {
             _isAnalyzing.value = false
 
             val explanation = response.explanation
-            if (explanation.contains("Lütfen AI Studio Secrets panelinden") || explanation.contains("anahtarı tanımlanmamış") || explanation.contains("tanımlayın, sör") || explanation.contains("bağlantıda bir aksama oldu sör")) {
+            if (explanation.contains("Lütfen AI Studio Secrets panelinden") || explanation.contains("anahtarı tanımlanmamış") || explanation.contains("tanımlayın sör")) {
                 _jarvisSpeechResponse.value = "Sör, API bağlantısında veya anahtarda bir sorun tespit ettim. Otopilot tünelimizi açarak Google AI Studio'dan sizin için derhal yeni bir anahtar talep ediyorum sör."
                 onSpeak("Sör, API bağlantısında veya anahtarda bir sorun tespit ettim. Otopilot tünelimizi açarak Google AI Studio'dan sizin için derhal yeni bir anahtar talep ediyorum sör.")
                 delay(3000)

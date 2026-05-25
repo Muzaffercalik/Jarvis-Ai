@@ -1024,7 +1024,7 @@ fun JarvisHudView(
             var detectedEngine by remember { mutableStateOf("Bilinmiyor") }
             
             // Retrieve actual values
-            var geminiKey by remember { mutableStateOf(sharedPrefs.getString("custom_api_key", "AIzaSyA2j_H4g2JwzKgN9tbXMQH3Apl6Cks0nks") ?: "AIzaSyA2j_H4g2JwzKgN9tbXMQH3Apl6Cks0nks") }
+            var geminiKey by remember { mutableStateOf(sharedPrefs.getString("custom_api_key", "") ?: "") }
             var openaiKey by remember { mutableStateOf(sharedPrefs.getString("openai_api_key", "") ?: "") }
             var openrouterKey by remember { mutableStateOf(sharedPrefs.getString("openrouter_api_key", "") ?: "") }
             var claudeKey by remember { mutableStateOf(sharedPrefs.getString("claude_api_key", "") ?: "") }
