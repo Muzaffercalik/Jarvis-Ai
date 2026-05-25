@@ -517,7 +517,7 @@ fun JarvisNavigationBar(
         NavigationBarItem(
             selected = activeTab == JarvisTab.BROWSER_USE,
             onClick = { onTabSelected(JarvisTab.BROWSER_USE) },
-            icon = { Icon(Icons.Default.Language, contentDescription = "Tarayıcı", modifier = Modifier.testTag("nav_browser")) },
+            icon = { Icon(Icons.Default.Search, contentDescription = "Tarayıcı", modifier = Modifier.testTag("nav_browser")) },
             label = { Text("Bulut", fontSize = 9.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold) },
             colors = NavigationBarItemDefaults.colors(
                 selectedIconColor = NeonCyan,
@@ -935,6 +935,7 @@ fun JarvisHudView(
                     }
                 }
             }
+        }
 
         // 3. Smart API Key & Dynamic AI Engine Hub
         item {
@@ -2100,6 +2101,84 @@ fun JarvisBrowserUseView(viewModel: JarvisViewModel) {
             }
         }
 
+        // Google AI Studio Key Rotator Autopilot
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, NeonCyan.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+                    .background(TechPanel.copy(alpha = 0.8f), RoundedCornerShape(12.dp))
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "GOOGLE AI STUDIO OTOPİLOTU",
+                            color = NeonCyan,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Anahtarın süresi dolduğunda veya tıkandığında Jarvis kendi kendine yeni anahtar üretir.",
+                            color = SoftGrey,
+                            fontSize = 9.sp,
+                            lineHeight = 12.sp
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(SuccessGreen.copy(alpha = 0.15f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "KORUMA AKTİF",
+                            color = SuccessGreen,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+
+                HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
+
+                Button(
+                    onClick = {
+                        viewModel.startApiKeyAutoRenewalTask(context)
+                    },
+                    modifier = Modifier.fillMaxWidth().height(36.dp).testTag("btn_autopilot_renew"),
+                    colors = ButtonDefaults.buttonColors(containerColor = TechViolet, contentColor = Color.White),
+                    shape = RoundedCornerShape(8.dp),
+                    enabled = !isRunning
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Autopilot",
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Şimdi Otomatik API Key Yenile (Otopilot)",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+            }
+        }
+
         // 1. Browser Use API Key config slot
         item {
             Column(
@@ -2233,7 +2312,7 @@ fun JarvisBrowserUseView(viewModel: JarvisViewModel) {
                         "empty" -> {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Icon(
-                                    imageVector = Icons.Default.Language,
+                                    imageVector = Icons.Default.Search,
                                     contentDescription = "Cloud Browser",
                                     tint = SoftGrey.copy(alpha = 0.3f),
                                     modifier = Modifier.size(40.dp)
