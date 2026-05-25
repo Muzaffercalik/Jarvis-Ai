@@ -51,6 +51,26 @@ class JarvisFloatingService : Service(), RecognitionListener {
         IDLE, LISTENING, THINKING, SPEAKING
     }
     private var currentOrbState = OrbState.IDLE
+    private var isWakeWordListening = false
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent != null && intent.action == "WAKE_WORD_CHANGED") {
+            val sharedPrefs = getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE)
+            val isWakeWordEnabled = sharedPrefs.getBoolean("wake_word_enabled", false)
+            if (isWakeWordEnabled) {
+                if (currentOrbState == OrbState.IDLE && !isWakeWordListening) {
+                    startWakeWordListening()
+                }
+            } else {
+                if (isWakeWordListening) {
+                    try { speechRecognizer?.stopListening() } catch (e: Exception) {}
+                    isWakeWordListening = false
+                    updateNotification("Sistem hazır sör.", false)
+                }
+            }
+        }
+        return START_STICKY
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -70,6 +90,11 @@ class JarvisFloatingService : Service(), RecognitionListener {
         initializeTts()
         initializeSpeechRecognizer()
         showFloatingOrb()
+        
+        // Start wake word monitoring if enabled after initialization delay
+        Handler(Looper.getMainLooper()).postDelayed({
+            startWakeWordListening()
+        }, 1500)
         
         Log.d("JarvisFloating", "Service created and orb shown successfully.")
     }
@@ -221,6 +246,7 @@ class JarvisFloatingService : Service(), RecognitionListener {
             if (speechRecognizer == null) {
                 initializeSpeechRecognizer()
             }
+            isWakeWordListening = false
             vibrateDevice(60)
             
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -238,9 +264,53 @@ class JarvisFloatingService : Service(), RecognitionListener {
         }
     }
 
+    private fun startWakeWordListening() {
+        val sharedPrefs = getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE)
+        val isWakeWordEnabled = sharedPrefs.getBoolean("wake_word_enabled", false)
+        if (!isWakeWordEnabled) return
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+
+        if (currentOrbState != OrbState.IDLE) return
+
+        try {
+            if (speechRecognizer == null) {
+                initializeSpeechRecognizer()
+            }
+            isWakeWordListening = true
+            
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "tr-TR")
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "tr-TR")
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+            }
+            speechRecognizer?.startListening(intent)
+            updateNotification("Jarvis Arka Planda Dinliyor ('Hey Jarvis')", false)
+        } catch (e: Exception) {
+            Log.e("JarvisFloating", "Error in startWakeWordListening: ${e.message}")
+        }
+    }
+
+    private fun restartWakeWordListeningIfNeeded() {
+        val sharedPrefs = getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE)
+        val isWakeWordEnabled = sharedPrefs.getBoolean("wake_word_enabled", false)
+        if (isWakeWordEnabled && currentOrbState == OrbState.IDLE) {
+            val handler = Handler(Looper.getMainLooper())
+            handler.postDelayed({
+                if (currentOrbState == OrbState.IDLE && !isWakeWordListening) {
+                    startWakeWordListening()
+                }
+            }, 800)
+        }
+    }
+
     private fun stopListening() {
         try {
             speechRecognizer?.stopListening()
+            isWakeWordListening = false
             setOrbState(OrbState.IDLE)
             updateNotification("Sistem hazır sör.", false)
         } catch (e: Exception) {
@@ -255,6 +325,12 @@ class JarvisFloatingService : Service(), RecognitionListener {
 
     private fun speakTts(text: String) {
         if (isTtsReady && textToSpeech != null) {
+            // Stop background wake word before speaking to prevent self-trigger
+            if (isWakeWordListening) {
+                try { speechRecognizer?.stopListening() } catch (e: Exception) {}
+                isWakeWordListening = false
+            }
+            
             setOrbState(OrbState.SPEAKING)
             textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "floating_tts_id")
             // Revert state back after speech completes
@@ -262,6 +338,7 @@ class JarvisFloatingService : Service(), RecognitionListener {
             handler.postDelayed({
                 if (currentOrbState == OrbState.SPEAKING) {
                     setOrbState(OrbState.IDLE)
+                    restartWakeWordListeningIfNeeded()
                 }
             }, (text.length * 75L).coerceAtLeast(1500L))
         }
@@ -554,7 +631,9 @@ class JarvisFloatingService : Service(), RecognitionListener {
     override fun onBufferReceived(buffer: ByteArray?) {}
     
     override fun onEndOfSpeech() {
-        setOrbState(OrbState.IDLE)
+        if (!isWakeWordListening) {
+            setOrbState(OrbState.IDLE)
+        }
     }
 
     override fun onError(error: Int) {
@@ -564,20 +643,61 @@ class JarvisFloatingService : Service(), RecognitionListener {
             SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Zaman aşımı sör"
             else -> "Bağlantı kesildi"
         }
-        updateNotification(msg, false)
+        if (!isWakeWordListening) {
+            updateNotification(msg, false)
+        }
+        isWakeWordListening = false
+        restartWakeWordListeningIfNeeded()
     }
 
     override fun onResults(results: Bundle?) {
         val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
         val text = matches?.firstOrNull() ?: ""
-        if (text.isNotEmpty()) {
-            processBackgroundCommand(text)
+        
+        Log.d("JarvisFloating", "onResults parsing text: '$text', isWakeWordListening=$isWakeWordListening")
+        
+        if (isWakeWordListening) {
+            isWakeWordListening = false
+            val textLower = text.lowercase(Locale.getDefault())
+            val patterns = listOf("hey jarvis", "ey jarvis", "hey carvis", "hay jarvis", "jarvis")
+            var matchedPattern: String? = null
+            for (pattern in patterns) {
+                if (textLower.contains(pattern)) {
+                    matchedPattern = pattern
+                    break
+                }
+            }
+            
+            if (matchedPattern != null) {
+                vibrateDevice(120)
+                val cleanIndex = textLower.indexOf(matchedPattern)
+                val followUpText = textLower.substring(cleanIndex + matchedPattern.length).trim()
+                
+                if (followUpText.isNotEmpty()) {
+                    speakTts("Hemen sör.")
+                    processBackgroundCommand(followUpText)
+                } else {
+                    speakTts("Efendim, sizi dinliyorum sör.")
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        startListening()
+                    }, 1400)
+                }
+            } else {
+                // No match, loop back quietly
+                restartWakeWordListeningIfNeeded()
+            }
         } else {
-            setOrbState(OrbState.IDLE)
+            if (text.isNotEmpty()) {
+                processBackgroundCommand(text)
+            } else {
+                setOrbState(OrbState.IDLE)
+                restartWakeWordListeningIfNeeded()
+            }
         }
     }
 
     override fun onPartialResults(results: Bundle?) {
+        if (isWakeWordListening) return // Silent in background wake-word mode
         val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
         val text = matches?.firstOrNull() ?: ""
         if (text.isNotEmpty()) {

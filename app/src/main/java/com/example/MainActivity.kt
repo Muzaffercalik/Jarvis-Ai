@@ -882,6 +882,76 @@ fun JarvisHudView(
                     )
                 }
 
+                HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
+
+                // 1B. "Hey Jarvis" Wake Word Settings Switch
+                var isWakeWordEnabled by remember { 
+                    mutableStateOf(context.getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE)
+                        .getBoolean("wake_word_enabled", false)) 
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "\"Hey Jarvis\" Sesli Uyandırma",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "\"Hey Jarvis\" ses komutuyla asistanı ve mikrofonu otomatik uyandırır",
+                            color = SoftGrey,
+                            fontSize = 10.sp
+                        )
+                    }
+                    Switch(
+                        checked = isWakeWordEnabled,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = NeonCyan,
+                            checkedTrackColor = NeonBlue.copy(alpha = 0.5f)
+                        ),
+                        onCheckedChange = { checked ->
+                            val hasMicPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                            if (checked && !hasMicPermission) {
+                                Toast.makeText(context, "Bu özellik için ses kayıt yetkisi gereklidir sör.", Toast.LENGTH_SHORT).show()
+                                orbPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            } else {
+                                isWakeWordEnabled = checked
+                                context.getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE)
+                                    .edit()
+                                    .putBoolean("wake_word_enabled", checked)
+                                    .apply()
+                                
+                                // Send signal to service
+                                try {
+                                    val serviceIntent = Intent(context, JarvisFloatingService::class.java).apply {
+                                        action = "WAKE_WORD_CHANGED"
+                                    }
+                                    if (isOrbActive) {
+                                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                            context.startForegroundService(serviceIntent)
+                                        } else {
+                                            context.startService(serviceIntent)
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    android.util.Log.e("JarvisMain", "Could not send wake word changed update action: ${e.message}")
+                                }
+                                
+                                if (checked) {
+                                    Toast.makeText(context, "\"Hey Jarvis\" sesli otopilot uyanışı aktif sör!", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "\"Hey Jarvis\" uyanışı devredışı sör.", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    )
+                }
+
                 // 2. Intelligent Screen Clicking (Accessibility)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
