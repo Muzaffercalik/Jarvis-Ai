@@ -18,6 +18,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -1956,10 +1958,14 @@ fun JarvisShortcutsView(viewModel: JarvisViewModel) {
 @Composable
 fun JarvisLogsView(viewModel: JarvisViewModel) {
     val logs by viewModel.logs.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    var detectedScreenTexts by remember { mutableStateOf(emptyList<String>()) }
+    var isScanning by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(bottom = 24.dp)
     ) {
         item {
             Row(
@@ -1992,6 +1998,144 @@ fun JarvisLogsView(viewModel: JarvisViewModel) {
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Text("Temizle", fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                }
+            }
+        }
+
+        // AKILLI EKRAN ANALİZ OTOPİLOTU (SMART SCREEN VISION CONTROLLER)
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, NeonBlue.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+                    .background(TechPanel.copy(alpha = 0.8f), RoundedCornerShape(12.dp))
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(if (com.example.JarvisAccessibilityService.isServiceRunning()) SuccessGreen else ErrorRed)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "AKILLI EKRAN ANALİZÖRÜ (VISION)",
+                            color = NeonCyan,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Text(
+                        text = if (com.example.JarvisAccessibilityService.isServiceRunning()) "YAYINDA" else "ÇEVRİMDIŞI",
+                        color = if (com.example.JarvisAccessibilityService.isServiceRunning()) SuccessGreen else ErrorRed,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+
+                Text(
+                    text = "Arka planda (mesela YouTube açıkken) Jarvis küresine dokunup 'Şuna tıkla' demeniz yeterlidir. Jarvis ekrandaki yazıları görerek otomatik tıklama koordinatını bulur.",
+                    color = SoftGrey,
+                    fontSize = 9.sp,
+                    lineHeight = 12.sp
+                )
+
+                HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
+
+                Button(
+                    onClick = {
+                        isScanning = true
+                        detectedScreenTexts = if (com.example.JarvisAccessibilityService.isServiceRunning()) {
+                            com.example.JarvisAccessibilityService.getVisibleScreenTexts().filter { it.isNotBlank() }
+                        } else {
+                            emptyList()
+                        }
+                        isScanning = false
+                    },
+                    modifier = Modifier.fillMaxWidth().height(36.dp).testTag("btn_scan_screen"),
+                    colors = ButtonDefaults.buttonColors(containerColor = TechViolet, contentColor = Color.White),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = if (isScanning) "Kamera & Ekran Taranıyor..." else "Ekranda Algılanan Nesneleri Gör",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+
+                if (!com.example.JarvisAccessibilityService.isServiceRunning()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(ErrorRed.copy(alpha = 0.1f), RoundedCornerShape(6.dp))
+                            .padding(8.dp)
+                    ) {
+                        Text(
+                            text = "Hata: Jarvis Erişilebilirlik Servisi aktif değil. Sistemi kullanmak için cihaz ayarlarından Jarvis'i etkinleştirin.",
+                            color = ErrorRed,
+                            fontSize = 9.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                } else if (detectedScreenTexts.isNotEmpty()) {
+                    Text(
+                        text = "Aktif Ekranda Şu An Algılanan Öğeler (Dokununca o noktaya tıkla):",
+                        color = Color.White,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+
+                    // Display scrollable row of detected label chips
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        detectedScreenTexts.forEach { text ->
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .border(1.dp, NeonCyan.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+                                    .background(Color.White.copy(alpha = 0.05f))
+                                    .clickable {
+                                        com.example.JarvisAccessibilityService.clickByText(text)
+                                        Toast.makeText(context, "Dokunuluyor sör: $text", Toast.LENGTH_SHORT).show()
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "Tap",
+                                        tint = NeonCyan,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = text,
+                                        color = Color.White,
+                                        fontSize = 10.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

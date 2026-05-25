@@ -231,6 +231,22 @@ object JarvisBrain {
         val sharedPrefs = context.getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE)
         val activeEngine = sharedPrefs.getString("active_ai_engine", "GEMINI") ?: "GEMINI"
         
+        // Read visible layout text nodes to provide real-time environment-awareness
+        val screenDump = if (com.example.JarvisAccessibilityService.isServiceRunning()) {
+            com.example.JarvisAccessibilityService.getVisibleScreenDump()
+        } else {
+            "Erişilebilirlik Servisi Aktif Değil Sör."
+        }
+
+        val enrichedCommand = """
+            KULLANICININ MEVCUT EKRAN İÇERİĞİ (TEXT LAYOUT):
+            [ $screenDump ]
+            
+            KULLANICI KOMUTU: "$command"
+            
+            Eğer kullanıcı ekranda yer alan bir yazıya ("abone ol", "giriş", "beğen" vb.) tıklamak veya etkileşime girmek istiyorsa, bu yazıyı tam olarak 'clickTarget' alanına yerleştirip CLICK_COORDINATES intetini seç sör.
+        """.trimIndent()
+        
         try {
             when (activeEngine.uppercase()) {
                 "GEMINI" -> {
@@ -244,7 +260,7 @@ object JarvisBrain {
                     }
 
                     val requestBody = GenerateContentRequest(
-                        contents = listOf(Content(parts = listOf(Part(text = command)))),
+                        contents = listOf(Content(parts = listOf(Part(text = enrichedCommand)))),
                         generationConfig = GenerationConfig(temperature = 0.2, responseMimeType = "application/json"),
                         systemInstruction = SystemInstruction(parts = listOf(Part(text = SYSTEM_PROMPT)))
                     )
@@ -280,7 +296,7 @@ object JarvisBrain {
                         put("response_format", JSONObject().put("type", "json_object"))
                         put("messages", JSONArray().apply {
                             put(JSONObject().put("role", "system").put("content", SYSTEM_PROMPT))
-                            put(JSONObject().put("role", "user").put("content", command))
+                            put(JSONObject().put("role", "user").put("content", enrichedCommand))
                         })
                     }
 
@@ -306,7 +322,7 @@ object JarvisBrain {
                         put("temperature", 0.2)
                         put("messages", JSONArray().apply {
                             put(JSONObject().put("role", "system").put("content", SYSTEM_PROMPT))
-                            put(JSONObject().put("role", "user").put("content", command))
+                            put(JSONObject().put("role", "user").put("content", enrichedCommand))
                         })
                     }
 
@@ -337,7 +353,7 @@ object JarvisBrain {
                         put("system", SYSTEM_PROMPT)
                         put("temperature", 0.2)
                         put("messages", JSONArray().apply {
-                            put(JSONObject().put("role", "user").put("content", command))
+                            put(JSONObject().put("role", "user").put("content", enrichedCommand))
                         })
                     }
 
@@ -366,7 +382,7 @@ object JarvisBrain {
                         put("temperature", 0.2)
                         put("messages", JSONArray().apply {
                             put(JSONObject().put("role", "system").put("content", SYSTEM_PROMPT))
-                            put(JSONObject().put("role", "user").put("content", command))
+                            put(JSONObject().put("role", "user").put("content", enrichedCommand))
                         })
                     }
 
