@@ -371,19 +371,64 @@ class JarvisFloatingService : Service(), RecognitionListener {
                         Log.e("Jarvis", "Transfer failed")
                     }
                 }
-                "CLICK_COORDINATES" -> {
+                "TYPE_TEXT" -> {
+                    val text = response.inputText ?: ""
                     val target = response.clickTarget ?: ""
-                    if (JarvisAccessibilityService.isServiceRunning() && target.isNotEmpty()) {
-                        val coordRegex = """(\d+)\s*,\s*(\d+)""".toRegex()
-                        val match = coordRegex.find(target)
-                        if (match != null) {
-                            val x = match.groupValues[1].toFloatOrNull()
-                            val y = match.groupValues[2].toFloatOrNull()
-                            if (x != null && y != null) {
-                                JarvisAccessibilityService.clickAtCoordinates(x, y)
+                    if (JarvisAccessibilityService.isServiceRunning()) {
+                        if (target.isNotEmpty()) {
+                            val typed = JarvisAccessibilityService.inputTextByText(target, text)
+                            if (!typed) {
+                                JarvisAccessibilityService.typeIntoFocusedNode(text)
                             }
                         } else {
-                            JarvisAccessibilityService.clickByText(target)
+                            JarvisAccessibilityService.typeIntoFocusedNode(text)
+                        }
+                    }
+                }
+                "CLICK_COORDINATES" -> {
+                    val target = response.clickTarget ?: ""
+                    val clicks = response.clicksCount ?: 1
+                    val delayVal = response.clickDelayMs ?: 0L
+                    val isLong = response.longClick ?: false
+                    val swipeDir = response.swipeDirection ?: ""
+
+                    serviceScope.launch {
+                        if (delayVal > 0) {
+                            kotlinx.coroutines.delay(delayVal)
+                        }
+
+                        if (JarvisAccessibilityService.isServiceRunning()) {
+                            if (swipeDir.isNotEmpty()) {
+                                JarvisAccessibilityService.swipeByName(swipeDir)
+                            } else if (target.isNotEmpty()) {
+                                val isCoordinate = target.contains(",") && """\d+\s*,\s*\d+""".toRegex().containsMatchIn(target)
+                                if (isCoordinate) {
+                                    val match = """(\d+)\s*,\s*(\d+)""".toRegex().find(target)
+                                    if (match != null) {
+                                        val x = match.groupValues[1].toFloatOrNull()
+                                        val y = match.groupValues[2].toFloatOrNull()
+                                        if (x != null && y != null) {
+                                            for (i in 0 until clicks) {
+                                                if (isLong) {
+                                                    JarvisAccessibilityService.longClickAtCoordinates(x, y)
+                                                } else {
+                                                    JarvisAccessibilityService.clickAtCoordinates(x, y)
+                                                }
+                                                if (clicks > 1) kotlinx.coroutines.delay(15)
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    for (i in 0 until clicks) {
+                                        if (isLong) {
+                                            JarvisAccessibilityService.longClickByText(target)
+                                        } else {
+                                            JarvisAccessibilityService.clickByText(target)
+                                        }
+                                        if (clicks > 1) kotlinx.coroutines.delay(15)
+                                    }
+                                }
+                            }
                         }
                     }
                 }

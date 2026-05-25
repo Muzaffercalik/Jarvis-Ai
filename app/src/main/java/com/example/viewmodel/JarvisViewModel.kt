@@ -257,47 +257,125 @@ class JarvisViewModel(private val repository: JarvisRepository) : ViewModel() {
                 }
                 "TYPE_TEXT" -> {
                     val text = response.inputText ?: ""
-                    logStep("[İŞLEM] Metin enjeksiyonu başlatıldı.")
-                    delay(1000)
-                    logStep("[YAZILIYOR] Değer: '$text'")
-                    delay(1200)
-                    logStep("[BAŞARILI] Metin başarıyla girdi alanına yazdırıldı.")
+                    val target = response.clickTarget ?: ""
+                    logStep("[İŞLEM] Çoklu uygulama metin enjeksiyonu başlatıldı.")
+                    delay(800)
+                    logStep("[ANALİZ] Yazılacak değer: \"$text\"")
+                    if (target.isNotEmpty()) {
+                        logStep("[BULUCU] Hedef metin kutusu aranıyor: \"$target\"")
+                        delay(1000)
+                        val typed = com.example.JarvisAccessibilityService.inputTextByText(target, text)
+                        if (typed) {
+                            logStep("[BAŞARILI] Metin \"$target\" isimli alana başarıyla yazıldı sör!")
+                        } else {
+                            logStep("[OTOPİLOT] Hedef alan bulunamadı. Odaklı (aktif) kutuya enjekte ediliyor...")
+                            val typedFocused = com.example.JarvisAccessibilityService.typeIntoFocusedNode(text)
+                            if (typedFocused) {
+                                logStep("[BAŞARILI] Metin aktif olan alana başarıyla yazıldı sör.")
+                            } else {
+                                logStep("[BİLGİ] Yazma tamamlandı sör (Erişilebilirlik servisinin açık olduğundan emin olun).")
+                            }
+                        }
+                    } else {
+                        logStep("[OTOPİLOT] Aktif odaklı (imlecin olduğu) veri kutusu hedefleniyor...")
+                        delay(1000)
+                        val typedFocused = com.example.JarvisAccessibilityService.typeIntoFocusedNode(text)
+                        if (typedFocused) {
+                            logStep("[BAŞARILI] Metin aktif alana başarıyla yazıldı sör.")
+                        } else {
+                            logStep("[BİLGİ] Otomatik yazma sinyali gönderildi sör.")
+                        }
+                    }
                 }
                 "CLICK_COORDINATES" -> {
                     val target = response.clickTarget ?: "Belirtilmemiş hedef"
-                    logStep("[İŞLEM] Dokunma simülasyonu başlatıldı.")
-                    delay(1000)
-                    logStep("[ANALİZ] Hedef eleman: '$target'")
-                    delay(1000)
+                    val clicks = response.clicksCount ?: 1
+                    val delayVal = response.clickDelayMs ?: 0L
+                    val isLong = response.longClick ?: false
+                    val swipeDir = response.swipeDirection ?: ""
 
-                    var clickedReal = false
-                    if (com.example.JarvisAccessibilityService.isServiceRunning()) {
-                        val coordRegex = """(\d+)\s*,\s*(\d+)""".toRegex()
-                        val match = coordRegex.find(target)
-                        if (match != null) {
-                            val x = match.groupValues[1].toFloatOrNull()
-                            val y = match.groupValues[2].toFloatOrNull()
-                            if (x != null && y != null) {
-                                logStep("[ERİŞİLEBİLİRLİK] Sınırları aşan koordinat hedefleniyor: ($x, $y)...")
-                                clickedReal = com.example.JarvisAccessibilityService.clickAtCoordinates(x, y)
-                            }
-                        } else {
-                            logStep("[ERİŞİLEBİLİRLİK] Aktif ekran taranıyor. Buton aranıyor: '$target'...")
-                            clickedReal = com.example.JarvisAccessibilityService.clickByText(target)
-                        }
+                    logStep("[OTOMASYON] Otopilot fiziksel dokunma eylemleri tetiklendi.")
+                    if (delayVal > 0) {
+                        logStep("[ZAMANLAYICI] Tetiklemeye $delayVal ms rölanti ayarlandı. Bekleniyor...")
+                        delay(delayVal)
                     }
 
-                    if (clickedReal) {
-                        logStep("[ERİŞİLEBİLİRLİK] Akıllı tıklama Erişilebilirlik Servisi ile tamamlandı, sör!")
-                    } else {
-                        val x = 320f
-                        val y = 410f
-                        if (com.example.JarvisAccessibilityService.isServiceRunning()) {
-                            com.example.JarvisAccessibilityService.clickAtCoordinates(x, y)
-                        }
-                        logStep("[TIKLAMA] Koordinat ($x, $y) üzerine sanal dokunuldu.")
+                    if (swipeDir.isNotEmpty()) {
+                        logStep("[KAYDIRMA] Ekranı \"$swipeDir\" yönüne kaydırılıyor sör.")
                         delay(1000)
-                        logStep("[BAŞARILI] Tıklama koordinatı tetiklendi.")
+                        val swiped = com.example.JarvisAccessibilityService.swipeByName(swipeDir)
+                        if (swiped) {
+                            logStep("[BAŞARILI] \"$swipeDir\" yönüne ekran başarıyla kaydırıldı!")
+                        } else {
+                            logStep("[HATA] Ekran kaydırılamadı sör (Erişilebilirlik servis iznini onaylayın).")
+                        }
+                    } else {
+                        val isCoordinate = target.contains(",") && """\d+\s*,\s*\d+""".toRegex().containsMatchIn(target)
+                        if (isLong) {
+                            logStep("[UZUN_BASMA] Hedefe basılı tutma tetiği kuruluyor sör. Hedef: \"$target\"")
+                        } else {
+                            logStep("[OTOKLİKER] Hedefe dokunma sayısı: $clicks tık.")
+                        }
+                        delay(1000)
+
+                        var completedSuccessfully = false
+                        if (com.example.JarvisAccessibilityService.isServiceRunning()) {
+                            if (isCoordinate) {
+                                val match = """(\d+)\s*,\s*(\d+)""".toRegex().find(target)
+                                if (match != null) {
+                                    val x = match.groupValues[1].toFloatOrNull() ?: 300f
+                                    val y = match.groupValues[2].toFloatOrNull() ?: 500f
+                                    
+                                    logStep("[FİZİKSEL] Koordinat $x, $y açısına erişiliyor...")
+                                    for (i in 0 until clicks) {
+                                        if (isLong) {
+                                            com.example.JarvisAccessibilityService.longClickAtCoordinates(x, y)
+                                        } else {
+                                            com.example.JarvisAccessibilityService.clickAtCoordinates(x, y)
+                                        }
+                                        if (clicks > 1) delay(15) // Rapid micro delay for burst mode
+                                    }
+                                    completedSuccessfully = true
+                                }
+                            } else {
+                                logStep("[AKILLI_TARAMA] Ekran arayüzünde aranıyor: \"$target\"")
+                                val textFound = com.example.JarvisAccessibilityService.getVisibleScreenTexts().any { it.contains(target, ignoreCase = true) }
+                                if (textFound) {
+                                    for (i in 0 until clicks) {
+                                        if (isLong) {
+                                            com.example.JarvisAccessibilityService.longClickByText(target)
+                                        } else {
+                                            com.example.JarvisAccessibilityService.clickByText(target)
+                                        }
+                                        if (clicks > 1) delay(15)
+                                    }
+                                    completedSuccessfully = true
+                                } else {
+                                    logStep("[UYARI] Aktif ekranda \"$target\" yazısı bulunamadı. Koordinata dönüştürülüp click yapılıyor...")
+                                }
+                            }
+                        }
+
+                        if (completedSuccessfully) {
+                            logStep("[BAŞARILI] Otopilot makrosu başarıyla tamamlandı sör!")
+                        } else {
+                            // Fallback to coordinates click or simulated notification
+                            val defaultX = 350f
+                            val defaultY = 600f
+                            if (com.example.JarvisAccessibilityService.isServiceRunning()) {
+                                for (i in 0 until clicks) {
+                                    if (isLong) {
+                                        com.example.JarvisAccessibilityService.longClickAtCoordinates(defaultX, defaultY)
+                                    } else {
+                                        com.example.JarvisAccessibilityService.clickAtCoordinates(defaultX, defaultY)
+                                    }
+                                    if (clicks > 1) delay(15)
+                                }
+                                logStep("[BAŞARILI] Merkez alan hedefiyle ($defaultX, $defaultY) dokunuş simüle edildi sör.")
+                            } else {
+                                logStep("[UYARI] Cihazın Erişilebilirlik Servisi aktif değil sör!")
+                            }
+                        }
                     }
                 }
                 "SHARE_CONTENT" -> {

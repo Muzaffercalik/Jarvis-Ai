@@ -2140,6 +2140,294 @@ fun JarvisLogsView(viewModel: JarvisViewModel) {
             }
         }
 
+        // MANUEL MAKRO VE OTO KLİKER PANELİ (MANUAL ACTION AUTOPILOT)
+        item {
+            var activeTargetText by remember { mutableStateOf("") }
+            var writeTextVal by remember { mutableStateOf("") }
+            var activeClicksCount by remember { mutableStateOf("1") }
+            var activeDelayMs by remember { mutableStateOf("0") }
+            var isLongClickActive by remember { mutableStateOf(false) }
+
+            val coroutineScope = rememberCoroutineScope()
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, NeonCyan.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+                    .background(TechPanel.copy(alpha = 0.8f), RoundedCornerShape(12.dp))
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "Macro",
+                            tint = NeonCyan,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "MANUEL MAKRO VE OTO KLİKER PANELİ",
+                            color = NeonCyan,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Text(
+                    text = "Buradan istediğiniz koordinata/yazıya otopilot dokunuşları, çoklu tık (oto kliker) ve bekleme süreli basma fonksiyonları tetikleyebilirsiniz.",
+                    color = SoftGrey,
+                    fontSize = 9.sp,
+                    lineHeight = 12.sp
+                )
+
+                HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
+
+                // Inputs grid block
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Click Target input
+                    Text(
+                        text = "HEDEF SEÇİCİ (Yazı veya 'X,Y' koordinatı ör: 540,1100):",
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 9.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    OutlinedTextField(
+                        value = activeTargetText,
+                        onValueChange = { activeTargetText = it },
+                        placeholder = { Text("Ör: Abone Ol veya 450,1500", fontSize = 11.sp, color = SoftGrey.copy(alpha = 0.5f)) },
+                        modifier = Modifier.fillMaxWidth().height(48.dp).testTag("macro_target_input"),
+                        textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 12.sp, fontFamily = FontFamily.Monospace),
+                        shape = RoundedCornerShape(6.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = NeonCyan,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                            focusedContainerColor = Color.White.copy(alpha = 0.02f),
+                            unfocusedContainerColor = Color.White.copy(alpha = 0.02f)
+                        ),
+                        singleLine = true
+                    )
+
+                    // Text Inserter Block
+                    Text(
+                        text = "YAZILACAK METİN (Odaklı kutuya veya yukarıdaki hedefe yazar):",
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 9.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = writeTextVal,
+                            onValueChange = { writeTextVal = it },
+                            placeholder = { Text("Yazılacak kelimeyi girin", fontSize = 11.sp, color = SoftGrey.copy(alpha = 0.5f)) },
+                            modifier = Modifier.weight(1f).height(48.dp).testTag("macro_write_input"),
+                            textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 12.sp, fontFamily = FontFamily.Monospace),
+                            shape = RoundedCornerShape(6.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = NeonCyan,
+                                unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                                focusedContainerColor = Color.White.copy(alpha = 0.02f),
+                                unfocusedContainerColor = Color.White.copy(alpha = 0.02f)
+                            ),
+                            singleLine = true
+                        )
+
+                        Button(
+                            onClick = {
+                                if (writeTextVal.isNotBlank()) {
+                                    val typed = if (activeTargetText.isNotBlank()) {
+                                        com.example.JarvisAccessibilityService.inputTextByText(activeTargetText, writeTextVal)
+                                    } else {
+                                        com.example.JarvisAccessibilityService.typeIntoFocusedNode(writeTextVal)
+                                    }
+                                    if (typed) {
+                                        Toast.makeText(context, "Metin başarıyla yazdırıldı, sör!", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "Girdi enjekte edildi sör.", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
+                            modifier = Modifier.height(48.dp).testTag("btn_macro_write"),
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonCyan, contentColor = Color.Black),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text("Yaz", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        }
+                    }
+
+                    // Configuration Columns for Delay, Repeat Count, and Long Click
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Repeat count input
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = "TEKRAR (Tık sayısı):",
+                                color = Color.White.copy(alpha = 0.7f),
+                                fontSize = 8.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            OutlinedTextField(
+                                value = activeClicksCount,
+                                onValueChange = { activeClicksCount = it },
+                                placeholder = { Text("1", fontSize = 11.sp) },
+                                modifier = Modifier.fillMaxWidth().height(48.dp).testTag("macro_clicks_input"),
+                                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 12.sp, fontFamily = FontFamily.Monospace),
+                                shape = RoundedCornerShape(6.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = NeonCyan,
+                                    unfocusedBorderColor = Color.White.copy(alpha = 0.15f)
+                                ),
+                                singleLine = true
+                            )
+                        }
+
+                        // Delay input
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = "ZAMAN SÜRESİ (ms gecikme):",
+                                color = Color.White.copy(alpha = 0.7f),
+                                fontSize = 8.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            OutlinedTextField(
+                                value = activeDelayMs,
+                                onValueChange = { activeDelayMs = it },
+                                placeholder = { Text("0", fontSize = 11.sp) },
+                                modifier = Modifier.fillMaxWidth().height(48.dp).testTag("macro_delay_input"),
+                                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 12.sp, fontFamily = FontFamily.Monospace),
+                                shape = RoundedCornerShape(6.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = NeonCyan,
+                                    unfocusedBorderColor = Color.White.copy(alpha = 0.15f)
+                                ),
+                                singleLine = true
+                            )
+                        }
+                    }
+
+                    // Long click checkbox
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = isLongClickActive,
+                            onCheckedChange = { isLongClickActive = it },
+                            colors = CheckboxDefaults.colors(checkedColor = NeonCyan, uncheckedColor = Color.White.copy(alpha = 0.4f))
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Uzun Bas (Long Press / Basılı Tut)",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+
+                // Rapid Macro Action Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            if (activeTargetText.isNotBlank()) {
+                                coroutineScope.launch {
+                                    val clicks = activeClicksCount.toIntOrNull() ?: 1
+                                    val delayVal = activeDelayMs.toLongOrNull() ?: 0L
+                                    
+                                    if (delayVal > 0) {
+                                        kotlinx.coroutines.delay(delayVal)
+                                    }
+
+                                    val isCoordinate = activeTargetText.contains(",") && """\d+\s*,\s*\d+""".toRegex().containsMatchIn(activeTargetText)
+                                    if (isCoordinate) {
+                                        val match = """(\d+)\s*,\s*(\d+)""".toRegex().find(activeTargetText)
+                                        if (match != null) {
+                                            val x = match.groupValues[1].toFloatOrNull() ?: 300f
+                                            val y = match.groupValues[2].toFloatOrNull() ?: 500f
+                                            for (i in 0 until clicks) {
+                                                if (isLongClickActive) {
+                                                    com.example.JarvisAccessibilityService.longClickAtCoordinates(x, y)
+                                                } else {
+                                                    com.example.JarvisAccessibilityService.clickAtCoordinates(x, y)
+                                                }
+                                                if (clicks > 1) kotlinx.coroutines.delay(15)
+                                            }
+                                            Toast.makeText(context, "$clicks kez tıklandı sör!", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else {
+                                        for (i in 0 until clicks) {
+                                            if (isLongClickActive) {
+                                                com.example.JarvisAccessibilityService.longClickByText(activeTargetText)
+                                            } else {
+                                                com.example.JarvisAccessibilityService.clickByText(activeTargetText)
+                                            }
+                                            if (clicks > 1) kotlinx.coroutines.delay(15)
+                                        }
+                                        Toast.makeText(context, "$activeTargetText hedefine dokunuldu.", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            } else {
+                                Toast.makeText(context, "Lütfen bir hedef girin sör.", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(38.dp).testTag("btn_trigger_custom_click"),
+                        colors = ButtonDefaults.buttonColors(containerColor = TechViolet, contentColor = Color.White),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("Makroyu Tetikle", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    }
+                }
+
+                HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
+
+                // SWIPING AND DRAGGING CONTROL STRIPS
+                Text(
+                    text = "TEK TUŞLA KAYDIRMA VE KAYDIRMA JESTLERİ (SWIPES):",
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 9.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf("DOWN" to "Aşağı ⬇️", "UP" to "Yukarı ⬆️", "LEFT" to "Sola ⬅️", "RIGHT" to "Sağa ➡️").forEach { (dir, label) ->
+                        Button(
+                            onClick = {
+                                val swiped = com.example.JarvisAccessibilityService.swipeByName(dir)
+                                if (swiped) {
+                                    Toast.makeText(context, "$label yönüne kaydırıldı sör.", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier.weight(1f).height(32.dp).testTag("btn_swipe_$dir"),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.08f), contentColor = Color.White),
+                            contentPadding = PaddingValues(0.dp),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(label, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                        }
+                    }
+                }
+            }
+        }
+
         if (logs.isEmpty()) {
             item {
                 Text(

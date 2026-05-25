@@ -122,6 +122,90 @@ class JarvisAccessibilityService : AccessibilityService() {
             return service.dispatchGesture(builder.build(), null, null)
         }
 
+        fun longClickByText(text: String): Boolean {
+            val service = instance ?: return false
+            val rootNode = service.rootInActiveWindow ?: return false
+            return findAndLongClickNodeByText(rootNode, text)
+        }
+
+        private fun findAndLongClickNodeByText(node: AccessibilityNodeInfo, text: String): Boolean {
+            val contentDesc = node.contentDescription?.toString() ?: ""
+            val nodeText = node.text?.toString() ?: ""
+            if (nodeText.contains(text, ignoreCase = true) || contentDesc.contains(text, ignoreCase = true)) {
+                val rect = android.graphics.Rect()
+                node.getBoundsInScreen(rect)
+                if (rect.centerX() > 0 && rect.centerY() > 0) {
+                    val coordinateClicked = longClickAtCoordinates(rect.centerX().toFloat(), rect.centerY().toFloat())
+                    if (coordinateClicked) return true
+                }
+                if (node.isClickable) {
+                    val clicked = node.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK)
+                    if (clicked) return true
+                }
+            }
+            val count = node.childCount
+            for (i in 0 until count) {
+                val child = node.getChild(i)
+                if (child != null) {
+                    val clicked = findAndLongClickNodeByText(child, text)
+                    if (clicked) return true
+                }
+            }
+            return false
+        }
+
+        fun inputTextByText(targetText: String, textToInject: String): Boolean {
+            val service = instance ?: return false
+            val rootNode = service.rootInActiveWindow ?: return false
+            return findAndSetTextOnNode(rootNode, targetText, textToInject)
+        }
+
+        private fun findAndSetTextOnNode(node: AccessibilityNodeInfo, targetText: String, textToInject: String): Boolean {
+            val contentDesc = node.contentDescription?.toString() ?: ""
+            val nodeText = node.text?.toString() ?: ""
+            if (nodeText.contains(targetText, ignoreCase = true) || contentDesc.contains(targetText, ignoreCase = true)) {
+                if (node.isEditable) {
+                    val arguments = android.os.Bundle()
+                    arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, textToInject)
+                    val set = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+                    if (set) return true
+                }
+            }
+            val count = node.childCount
+            for (i in 0 until count) {
+                val child = node.getChild(i)
+                if (child != null) {
+                    val set = findAndSetTextOnNode(child, targetText, textToInject)
+                    if (set) return true
+                }
+            }
+            return false
+        }
+
+        fun typeIntoFocusedNode(textToInject: String): Boolean {
+            val service = instance ?: return false
+            val rootNode = service.rootInActiveWindow ?: return false
+            return findAndSetTextOnFocusedNode(rootNode, textToInject)
+        }
+
+        private fun findAndSetTextOnFocusedNode(node: AccessibilityNodeInfo, textToInject: String): Boolean {
+            if (node.isFocused && node.isEditable) {
+                val arguments = android.os.Bundle()
+                arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, textToInject)
+                val set = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+                if (set) return true
+            }
+            val count = node.childCount
+            for (i in 0 until count) {
+                val child = node.getChild(i)
+                if (child != null) {
+                    val set = findAndSetTextOnFocusedNode(child, textToInject)
+                    if (set) return true
+                }
+            }
+            return false
+        }
+
         fun swipe(fromX: Float, fromY: Float, toX: Float, toY: Float, duration: Long = 300): Boolean {
             val service = instance ?: return false
             val builder = GestureDescription.Builder()
@@ -131,6 +215,21 @@ class JarvisAccessibilityService : AccessibilityService() {
             }
             builder.addStroke(GestureDescription.StrokeDescription(path, 0, duration))
             return service.dispatchGesture(builder.build(), null, null)
+        }
+
+        fun swipeByName(direction: String, duration: Long = 300): Boolean {
+            val service = instance ?: return false
+            val metrics = service.resources.displayMetrics
+            val w = metrics.widthPixels.toFloat()
+            val h = metrics.heightPixels.toFloat()
+            
+            return when (direction.uppercase()) {
+                "DOWN" -> swipe(w / 2f, h * 0.3f, w / 2f, h * 0.8f, duration)
+                "UP" -> swipe(w / 2f, h * 0.8f, w / 2f, h * 0.3f, duration)
+                "LEFT" -> swipe(w * 0.8f, h / 2f, w * 0.2f, h / 2f, duration)
+                "RIGHT" -> swipe(w * 0.2f, h / 2f, w * 0.8f, h / 2f, duration)
+                else -> false
+            }
         }
 
         fun getVisibleScreenTexts(): List<String> {

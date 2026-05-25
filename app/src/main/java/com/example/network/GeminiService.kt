@@ -90,7 +90,11 @@ data class JarvisIntentResponse(
     @Json(name = "sharePlatform") val sharePlatform: String? = "",
     @Json(name = "shareRecipient") val shareRecipient: String? = "",
     @Json(name = "targetContext") val targetContext: String? = "",
-    @Json(name = "controlAction") val controlAction: String? = ""
+    @Json(name = "controlAction") val controlAction: String? = "",
+    @Json(name = "clicksCount") val clicksCount: Int? = 1,
+    @Json(name = "clickDelayMs") val clickDelayMs: Long? = 0,
+    @Json(name = "longClick") val longClick: Boolean? = false,
+    @Json(name = "swipeDirection") val swipeDirection: String? = "" // "DOWN", "UP", "LEFT", "RIGHT"
 )
 
 interface GeminiApiService {
@@ -139,10 +143,15 @@ object JarvisBrain {
            Provide 'searchQuery' with search term.
         3. "AUTO_LOGIN": Logging in to a site using local credentials (e.g., "spotify'a giriş yap", "google'da netflix arayıp hesabımla giriş yap").
            Provide 'targetUrl' with the target URL of the site if possible, and 'searchQuery' with the name of the service (e.g. "Netflix", "Spotify", "Google").
-        4. "TYPE_TEXT": Typing text anywhere on screen (e.g., "şuraya jarvis yaz", "arama yerine kedi yaz").
-           Provide 'inputText' with characters/strings.
-        5. "CLICK_COORDINATES": Clicking somewhere on the screen (e.g., "giriş yap butonuna tıkla", "şuraya tıkla", "arama simgesine tıkla").
-           Provide 'clickTarget' describing what to click.
+        4. "TYPE_TEXT": Typing text anywhere on screen (e.g., "şuraya jarvis yaz", "arama yerine kedi yaz", "google arama kutusuna mustafa yaz").
+           - 'inputText' must contain characters/strings to write.
+           - 'clickTarget' must contain the visual label/name of the input field if mentioned ("google arama", "arama", "email" etc.) so we can target it, or leave empty if user wants to type into the currently focused edit text.
+        5. "CLICK_COORDINATES": Clicking, long pressing, swiping or executing auto clicker macros on screen (e.g., "giriş yap butonuna tıkla", "şuraya tıkla", "buraya basılı tut", "ekranın ortasından aşağı kaydır", "oraya tıkla", "3 saniye sonra buraya bas", "oraya 3 kere bas", "şuraya 5 kez hızlıca tıkla").
+           - 'clickTarget': describing what to click / label on screen, or coordinate description.
+           - 'clicksCount': If user requests clicking multiple times (auto-clicker style), specify the positive integer count (e.g. "3 kere", "5 kez", "200 kez tıkla" -> clicksCount will be 3, 5, or 200; default is 1).
+           - 'clickDelayMs': If user requests delaying ('3 saniye sonra', '5 saniye sonra' etc.), specify the duration in MILLISECONDS (e.g. "3 saniye sonra" -> 3000; default is 0).
+           - 'longClick': Boolean, set to true if user says "basılı tut", "uzun bas", "hold click".
+           - 'swipeDirection': If user says swipe/scroll, specify: "DOWN" (aşağı kaydır), "UP" (yukarı kaydır), "LEFT" (sola kaydır), "RIGHT" (sağa kaydır). Leave empty for standard click.
         6. "SHARE_CONTENT": Sharing specified content, links, or videos via an external app (e.g., "Bu videoyu WhatsApp'tan Ahmet'e gönder", "Tarkan klibini Telegram ile paylaş sör", "şunu e-posta ile gönder").
            Provide 'sharePlatform' (e.g., "WhatsApp", "Telegram", "E-posta"), 'shareRecipient' if mentioned (e.g., "Ahmet", "Mehmet"), and 'inputText' with the text/data/video link to share.
         7. "CROSS_APP_TRANSFER": Copying content from one app context (e.g. browser, clipboard, site) and transferring/pasting it to another app (e.g., "web sitesindeki bilgileri kopyalayıp notlar uygulamasına yapıştır", "yazıyı alıp not defterine ekle").
@@ -153,7 +162,7 @@ object JarvisBrain {
           
         You MUST respond strictly in valid JSON format matching this schema:
         {
-          "explanation": "Jarvis's spoken response in Turkish. Make it sound rich like a butler. Example: 'Tabii sör, sistem feneri derhal etkinleştiriliyor.'",
+          "explanation": "Jarvis's spoken response in Turkish. Make it sound rich like a butler. Example: 'Tabii sör, hedefinize istendiği süre ve sıklıkta otopilot dokunuşu ayarlanıyor sör.'",
           "intent": "OPEN_YOUTUBE | SEARCH_GOOGLE | AUTO_LOGIN | TYPE_TEXT | CLICK_COORDINATES | SHARE_CONTENT | CROSS_APP_TRANSFER | DEVICE_CONTROL | SPEAK_ONLY",
           "searchQuery": "value or empty",
           "inputText": "value or empty",
@@ -162,7 +171,11 @@ object JarvisBrain {
           "sharePlatform": "value or empty (e.g. WhatsApp)",
           "shareRecipient": "value or empty (e.g. Ahmet)",
           "targetContext": "value or empty (e.g. Notlar)",
-          "controlAction": "value or empty (one of FLASHLIGHT_ON, FLASHLIGHT_OFF, WIFI_ON, WIFI_OFF, BLUETOOTH_ON, BLUETOOTH_OFF, VOLUME_UP, VOLUME_DOWN, VIBRATE, ALL_PERMISSIONS)"
+          "controlAction": "value or empty (one of FLASHLIGHT_ON, FLASHLIGHT_OFF, WIFI_ON, WIFI_OFF, BLUETOOTH_ON, BLUETOOTH_OFF, VOLUME_UP, VOLUME_DOWN, VIBRATE, ALL_PERMISSIONS)",
+          "clicksCount": 1,
+          "clickDelayMs": 0,
+          "longClick": false,
+          "swipeDirection": ""
         }
         Do not add any markup or markdown wraps like ```json in the actual voice response. We will request JSON MimeType so return pure JSON text only.
     """
